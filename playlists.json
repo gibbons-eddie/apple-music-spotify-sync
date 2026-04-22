@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Eddie Gibbons Essentials",
+    "apple_id": "pl.u-pMDlfY8LG6r",
+    "spotify_csv": "exports/SP_this_is_eddie_gibbons.csv"
+  },
+  {
+    "name": "(some of) my favorite songs",
+    "apple_id": "pl.u-EdveCXbK937",
+    "spotify_csv": "exports/SP_some_of_my_favorite_songs.csv"
+  }
+]

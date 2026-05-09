@@ -20,3 +20,6 @@ reports/
 
 # GitHub reports
 github-sync-reports/
+
+# Old test impl
+browser_fetch.js

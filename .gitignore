@@ -17,3 +17,6 @@ reports/
 
 # Markdown
 *.md
+
+# GitHub reports
+github-sync-reports/

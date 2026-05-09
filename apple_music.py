@@ -24,11 +24,9 @@ HEADERS_TEMPLATE = {
 
 
 def _scrape_apple_token() -> str:
-    """Scrape Apple's privileged JWT from their web player JS bundle."""
     sess = requests.Session()
     sess.headers.update(HEADERS_TEMPLATE)
 
-    # Fetch the main page to find the JS bundle URL
     resp = sess.get(AM_WEB)
     resp.raise_for_status()
     match = JS_FILE_RE.search(resp.text)
@@ -39,7 +37,6 @@ def _scrape_apple_token() -> str:
         )
     js_url = AM_WEB + match.group(0)
 
-    # Fetch the JS bundle and extract the JWT
     resp = sess.get(js_url)
     resp.raise_for_status()
     match = TOKEN_RE.search(resp.text)
@@ -53,25 +50,13 @@ def _scrape_apple_token() -> str:
 
 
 def _slugify(name: str) -> str:
-    """Convert a playlist name to a safe filename slug."""
     slug = name.lower().strip()
-    slug = re.sub(r"[^\w\s-]", "", slug)   # strip non-alphanumeric
-    slug = re.sub(r"[\s_-]+", "_", slug)   # collapse whitespace/dashes to underscore
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    slug = re.sub(r"[\s_-]+", "_", slug)
     return slug.strip("_")
 
 
 def fetch_apple_playlist(playlist_id: str) -> tuple[list[dict], str]:
-    """
-    Fetch all tracks from a public Apple Music playlist.
-
-    Args:
-        playlist_id: e.g. "pl.u-EdveCXbK937"
-
-    Returns:
-        Tuple of (tracks, playlist_name).
-        Tracks: list of dicts with keys: name, artist, album, duration_ms, isrc, apple_id, apple_url
-        Tracks are in playlist order.
-    """
     token = _scrape_apple_token()
     sess = requests.Session()
     sess.headers.update({
@@ -79,7 +64,6 @@ def fetch_apple_playlist(playlist_id: str) -> tuple[list[dict], str]:
         "Authorization": f"Bearer {token}",
     })
 
-    # Fetch playlist metadata to get the name
     meta_resp = sess.get(f"{AM_BASE}/v1/catalog/us/playlists/{playlist_id}")
     meta_resp.raise_for_status()
     playlist_name = meta_resp.json()["data"][0]["attributes"].get("name", playlist_id)
@@ -110,11 +94,10 @@ def fetch_apple_playlist(playlist_id: str) -> tuple[list[dict], str]:
                 "apple_url": attrs.get("url", ""),
             })
 
-        # Handle pagination
         next_url = data.get("next")
         if next_url:
             url = AM_BASE + next_url
-            params = {}  # params are embedded in the next URL
+            params = {}
             time.sleep(0.3)
         else:
             break
@@ -124,12 +107,6 @@ def fetch_apple_playlist(playlist_id: str) -> tuple[list[dict], str]:
 
 
 def export_to_csv(tracks: list[dict], output_path: str | Path) -> Path:
-    """
-    Export Apple Music tracks to CSV.
-
-    CSV columns: name, artist, album, duration_ms, isrc
-    This format is used by compare.py to diff against a Spotify export.
-    """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

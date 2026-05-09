@@ -1,0 +1,80 @@
+name: Sync Apple Music → Spotify
+
+on:
+  schedule:
+    # Every Friday at 00:00 EST (= 05:00 UTC). GitHub cron is UTC-only and
+    # has no DST awareness, so during EDT (Mar-Nov) this fires at 01:00 ET.
+    # If you'd rather it always be midnight Eastern local, change to "0 4 * * 5"
+    # in summer and back in winter, or set up two schedules.
+    - cron: "0 5 * * 5"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Ignore cache and re-match every track"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # commit cache back
+  issues: write     # create/update review issues
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run sync
+        env:
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+        run: |
+          # Cron-driven sync targets only "Eddie Gibbons Essentials".
+          # The larger "(some of) my favorite songs" playlist is run
+          # manually by Eddie when needed.
+          if [ "${{ inputs.force }}" = "true" ]; then
+            python3 sync.py --force --playlist "Eddie Gibbons Essentials"
+          else
+            python3 sync.py --playlist "Eddie Gibbons Essentials"
+          fi
+
+      - name: Post review issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 report_to_issue.py
+
+      - name: Upload reports as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-reports
+          path: reports/
+          if-no-files-found: ignore
+
+      - name: Commit updated cache
+        run: |
+          if [ -n "$(git status --porcelain cache/)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add cache/
+            git commit -m "chore: update sync cache [skip ci]"
+            git push
+          else
+            echo "No cache changes to commit."
+          fi

@@ -12,7 +12,10 @@ logger = logging.getLogger(__name__)
 AM_BASE = "https://amp-api.music.apple.com"
 AM_WEB = "https://music.apple.com"
 JS_FILE_RE = re.compile(r"/assets/index-legacy[~\-][^/]+\.js")
-TOKEN_RE = re.compile(r'eyJh[^"]+')
+# Match a full JWT (header.payload.signature, base64url segments joined by dots).
+# The old pattern `eyJh[^"]+` assumed the header started with the `alg` key
+# (base64 `eyJh...`); Apple now emits `typ` first (`eyJ0...`), which broke it.
+TOKEN_RE = re.compile(r'eyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+')
 
 HEADERS_TEMPLATE = {
     "User-Agent": (

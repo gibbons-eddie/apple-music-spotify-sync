@@ -1,5 +1,6 @@
 """Sync driver: Apple Music → Spotify. See ARCHITECTURE.md."""
 
+import sys
 import json
 import time
 import logging
@@ -310,6 +311,7 @@ def main():
     initial_cache_size = len(cache)
 
     report_playlists: list[dict] = []
+    failed: list[str] = []
     for entry in playlists:
         try:
             fragment = sync_playlist(entry, sp, cache, dry_run=args.dry_run, force=args.force)
@@ -317,12 +319,17 @@ def main():
         except Exception as e:
             logger.error("Failed syncing %s: %s", entry["name"], e)
             report_playlists.append({"name": entry["name"], "error": str(e)})
+            failed.append(entry["name"])
 
     if not args.dry_run:
         _save_cache(cache)
         logger.info("Cache: %d → %d mappings", initial_cache_size, len(cache))
 
     _write_review_report(report_playlists)
+
+    if failed:
+        logger.error("Sync failed for %d playlist(s): %s", len(failed), ", ".join(failed))
+        sys.exit(1)
 
 
 if __name__ == "__main__":

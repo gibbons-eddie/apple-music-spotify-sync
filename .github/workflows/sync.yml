@@ -54,6 +54,7 @@ jobs:
           fi
 
       - name: Post review issue
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -68,6 +69,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Commit updated cache
+        if: always()
         run: |
           if [ -n "$(git status --porcelain cache/)" ]; then
             git config user.name "github-actions[bot]"

@@ -117,8 +117,16 @@ def has_review_items(report: dict) -> bool:
 def _gh(*args: str) -> str:
     result = subprocess.run(
         ["gh", *args],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True,
     )
+    if result.returncode != 0:
+        # Surface what `gh` actually said. Without this, capture_output swallows
+        # stderr and the workflow log only shows a Python traceback with the
+        # command's arg list — enough to see what was called, not why it failed.
+        print(f"gh {' '.join(args)} failed (exit {result.returncode}):", file=sys.stderr)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
+        raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
     return result.stdout.strip()
 
 
@@ -155,23 +163,31 @@ def main():
     title = f"Sync review needed — {report.get('generated_at', '?')}"
 
     existing = find_existing_issue(repo)
-    if existing:
-        _gh(
-            "issue", "edit", existing,
-            "--repo", repo,
-            "--body", body,
-            "--title", title,
-        )
-        print(f"Updated issue #{existing}")
-    else:
-        _gh(
-            "issue", "create",
-            "--repo", repo,
-            "--label", ISSUE_LABEL,
-            "--title", title,
-            "--body", body,
-        )
-        print("Created new review issue")
+    try:
+        if existing:
+            _gh(
+                "issue", "edit", existing,
+                "--repo", repo,
+                "--body", body,
+                "--title", title,
+            )
+            print(f"Updated issue #{existing}")
+        else:
+            _gh(
+                "issue", "create",
+                "--repo", repo,
+                "--label", ISSUE_LABEL,
+                "--title", title,
+                "--body", body,
+            )
+            print("Created new review issue")
+    except subprocess.CalledProcessError:
+        # Issue create/edit failed — but the review items are the whole point
+        # of running this script, so dump the rendered body to the workflow log
+        # where it stays visible, then exit non-zero so the failure email fires.
+        print("\n=== Issue create/edit failed. Review body follows: ===\n", file=sys.stderr)
+        print(body)
+        return 1
 
     return 0
 

@@ -97,6 +97,7 @@ def _apple_context(track: dict, idx: int, all_tracks: list[dict]) -> dict:
         "artist": track.get("artist", ""),
         "album": track.get("album", ""),
         "isrc": track.get("isrc", ""),
+        "apple_id": track.get("apple_id", ""),
         "position": idx + 1,
         "total": len(all_tracks),
         "before": [_short(all_tracks[i]) for i in range(max(0, idx - 2), idx)],

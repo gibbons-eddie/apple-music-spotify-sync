@@ -51,8 +51,10 @@ def render_issue_body(report: dict) -> str:
     lines.append(f"- **Uncertain (score < 0.82):** {total_uncertain}")
     lines.append("")
     lines.append(
-        "To override a pick: paste the desired track ID into "
-        "`cache/track_mapping.json` next to the right Apple ID, then re-run sync."
+        "To override a pick, comment on this issue with:\n"
+        "`/override <apple_id> spotify:track:<track_id>`\n"
+        "(Both IDs are shown for each entry below.) "
+        "The next sync run picks up the override and updates the cache."
     )
     lines.append("")
 
@@ -74,6 +76,11 @@ def render_issue_body(report: dict) -> str:
                 album = f" · _{t['album']}_" if t.get("album") else ""
                 isrc = f" · ISRC `{t['isrc']}`" if t.get("isrc") else ""
                 lines.append(f"- **{t['name']}** — {t['artist']}{album}{isrc}")
+                if t.get("apple_id"):
+                    lines.append(
+                        f"  - Apple ID: `{t['apple_id']}` — fix: "
+                        f"`/override {t['apple_id']} spotify:track:<TRACK_ID>`"
+                    )
                 lines.extend(_fmt_apple_neighborhood(t))
             lines.append("")
 
@@ -92,6 +99,11 @@ def render_issue_body(report: dict) -> str:
                 )
                 lines.append("")
                 lines.append(f"- Apple album: _{a.get('album', '—')}_  ·  ISRC `{a.get('isrc', '—')}`")
+                if a.get("apple_id"):
+                    lines.append(
+                        f"- Apple ID: `{a['apple_id']}` — fix: "
+                        f"`/override {a['apple_id']} spotify:track:<TRACK_ID>`"
+                    )
                 lines.append("- Apple context:")
                 for line in _fmt_apple_neighborhood(a):
                     lines.append("  " + line.lstrip())

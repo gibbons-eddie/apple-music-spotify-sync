@@ -94,7 +94,12 @@ def _clean_title(title: str) -> str:
 
 
 def _clean_artist(artist: str) -> str:
-    artist = re.sub(r"\s*&\s*", " and ", artist)
+    # NB: we used to substitute `&` → ` and ` here to normalize semantically.
+    # That broke Spotify's field-scoped search: `artist:Peggy Gou and Ayra Starr`
+    # returns 0 hits, while `artist:Peggy Gou & Ayra Starr` returns the correct
+    # track. Since this function feeds both the search query and the fuzzy
+    # scorer, we keep the raw ampersand; token_set_ratio handles small
+    # differences well enough for scoring.
     artist = FEAT_INLINE_RE.sub("", artist)
     artist = FEAT_RE.sub("", artist)
     return artist.strip()

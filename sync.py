@@ -59,6 +59,10 @@ def _resolve_tracks(
         try:
             match = find_spotify_track(track, sp)
         except spotipy.SpotifyException as e:
+            if e.http_status in (401, 403):
+                # Credentials or app-registration problem — can't be per-track.
+                # Fail fast so Spotify isn't modified based on a broken search.
+                raise
             logger.warning("Search error for %s — %s: %s", track["name"], track["artist"], e)
             match = None
 

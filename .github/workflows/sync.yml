@@ -13,6 +13,10 @@ on:
         description: "Ignore cache and re-match every track"
         type: boolean
         default: false
+      allow_large_removal:
+        description: "Bypass the guard that refuses to remove >15% of the playlist"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # commit cache back
@@ -53,11 +57,14 @@ jobs:
           # Cron-driven sync targets only "Eddie Gibbons Essentials".
           # The larger "(some of) my favorite songs" playlist is run
           # manually by Eddie when needed.
+          args=(--playlist "Eddie Gibbons Essentials")
           if [ "${{ inputs.force }}" = "true" ]; then
-            python3 sync.py --force --playlist "Eddie Gibbons Essentials"
-          else
-            python3 sync.py --playlist "Eddie Gibbons Essentials"
+            args+=(--force)
           fi
+          if [ "${{ inputs.allow_large_removal }}" = "true" ]; then
+            args+=(--allow-large-removal)
+          fi
+          python3 sync.py "${args[@]}"
 
       - name: Post review issue
         if: always()

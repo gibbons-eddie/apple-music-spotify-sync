@@ -26,6 +26,16 @@ NEEDS_REVIEW_FILE = REPORTS_DIR / "needs_review.json"
 
 SEARCH_DELAY_SECONDS = 0.15
 
+# Large-removal guardrail: refuse to remove more than this share of the current
+# Spotify playlist in one run (e.g. an upstream Apple Music revert), unless the
+# removal is trivially small or --allow-large-removal is passed.
+REMOVAL_RATIO_THRESHOLD = 0.15
+REMOVAL_ABSOLUTE_FLOOR = 2
+
+
+class LargeRemovalError(RuntimeError):
+    pass
+
 
 def _load_cache() -> dict:
     if CACHE_FILE.exists():
@@ -174,7 +184,9 @@ def _diff_sync_playlist(
     sp: spotipy.Spotify,
     playlist_id: str,
     target_uris: list[str],
+    playlist_name: str,
     dry_run: bool = False,
+    allow_large_removal: bool = False,
 ):
     current = _get_current_playlist_uris(sp, playlist_id)
     target_counts = Counter(target_uris)
@@ -203,6 +215,21 @@ def _diff_sync_playlist(
         "Spotify currently: %d | add: %d | remove-all-copies-of: %d URIs | reorder: %d moves | untouched: %d",
         len(current), len(to_add), len(to_remove_all), len(reorder_moves), unchanged_count,
     )
+
+    removal_ratio = len(to_remove_all) / max(len(current), 1)
+    if len(to_remove_all) > REMOVAL_ABSOLUTE_FLOOR and removal_ratio > REMOVAL_RATIO_THRESHOLD:
+        msg = (
+            f"Refusing to remove {len(to_remove_all)}/{len(current)} tracks from {playlist_name} "
+            f"({removal_ratio:.1%} exceeds {REMOVAL_RATIO_THRESHOLD:.1%} threshold). "
+            "Re-run with --allow-large-removal to proceed, or investigate whether "
+            "the Apple Music playlist reverted upstream."
+        )
+        if allow_large_removal:
+            logger.warning("Large-removal guardrail BYPASSED (--allow-large-removal): %s", msg)
+        elif dry_run:
+            logger.warning("[dry-run] guardrail would abort: %s", msg)
+        else:
+            raise LargeRemovalError(msg)
 
     if dry_run:
         logger.info("[dry-run] no changes written")
@@ -252,6 +279,7 @@ def sync_playlist(
     cache: dict,
     dry_run: bool = False,
     force: bool = False,
+    allow_large_removal: bool = False,
 ) -> dict:
     name = entry["name"]
     apple_id = entry["apple_id"]
@@ -278,7 +306,10 @@ def sync_playlist(
     if unmatched:
         _write_unmatched(unmatched, name)
 
-    _diff_sync_playlist(sp, spotify_id, uris, dry_run=dry_run)
+    _diff_sync_playlist(
+        sp, spotify_id, uris, name,
+        dry_run=dry_run, allow_large_removal=allow_large_removal,
+    )
 
     return {
         "name": name,
@@ -296,6 +327,10 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Don't write to Spotify or save cache")
     parser.add_argument("--force", action="store_true", help="Ignore cache, re-match everything")
     parser.add_argument("--playlist", help="Sync only the playlist with this name")
+    parser.add_argument(
+        "--allow-large-removal", action="store_true",
+        help=f"Bypass the guard that refuses to remove >{REMOVAL_RATIO_THRESHOLD:.0%} of a playlist",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -319,7 +354,11 @@ def main():
     failed: list[str] = []
     for entry in playlists:
         try:
-            fragment = sync_playlist(entry, sp, cache, dry_run=args.dry_run, force=args.force)
+            fragment = sync_playlist(
+                entry, sp, cache,
+                dry_run=args.dry_run, force=args.force,
+                allow_large_removal=args.allow_large_removal,
+            )
             report_playlists.append(fragment)
         except Exception as e:
             logger.error("Failed syncing %s: %s", entry["name"], e)

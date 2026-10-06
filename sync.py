@@ -11,6 +11,7 @@ from collections import Counter
 
 import spotipy
 
+import review_state
 from apple_music import fetch_apple_playlist
 from spotify_match import MATCH_THRESHOLD, build_client, find_spotify_track
 
@@ -52,6 +53,8 @@ def _resolve_tracks(
     apple_tracks: list[dict],
     sp: spotipy.Spotify,
     cache: dict,
+    pending: dict,
+    playlist_name: str,
     force: bool = False,
 ) -> tuple[list[str], list[dict], list[dict], int]:
     uris: list[str] = []
@@ -84,6 +87,8 @@ def _resolve_tracks(
                 "[%s %.2f] %s — %s",
                 match["source"], match["score"], track["name"], track["artist"],
             )
+            if apple_id:
+                _update_pending(pending, apple_id, match, track, playlist_name)
             if match["score"] < MATCH_THRESHOLD:
                 uncertain.append({
                     "apple": _apple_context(track, idx, apple_tracks),
@@ -100,6 +105,58 @@ def _resolve_tracks(
         time.sleep(SEARCH_DELAY_SECONDS)
 
     return uris, unmatched, uncertain, cache_hits
+
+
+def _update_pending(pending: dict, apple_id: str, match: dict, track: dict, playlist_name: str):
+    """Keep pending_review.json in step with a freshly searched (non-cache) match.
+
+    A sub-threshold pick stays pending until /accept or /override; a new
+    confident match (e.g. from a --force re-match) clears it.
+    """
+    if match["score"] >= MATCH_THRESHOLD:
+        if pending.pop(apple_id, None):
+            logger.info("Pending review cleared by confident re-match: %s", track["name"])
+        return
+    existing = pending.get(apple_id)
+    if existing and existing.get("picked_uri") == match["uri"]:
+        return
+    pending[apple_id] = {
+        "picked_uri": match["uri"],
+        "picked_score": round(match["score"], 3),
+        "picked_at": review_state.now_iso(),
+        "name": track.get("name", ""),
+        "artist": track.get("artist", ""),
+        "playlist": playlist_name,
+    }
+
+
+def _prune_pending(
+    pending: dict,
+    dropped: dict,
+    cache: dict,
+    playlist_name: str,
+    apple_tracks: list[dict],
+) -> list[str]:
+    """Forget pending picks whose track has left this playlist.
+
+    The cache mapping goes too, so if the track is re-added it is matched from
+    scratch and surfaces as a brand-new review item. `dropped` records when,
+    so stale /accept or /override comments can't resolve the new pick.
+    """
+    present = {t.get("apple_id") for t in apple_tracks}
+    gone = [
+        aid for aid, entry in pending.items()
+        if entry.get("playlist") == playlist_name and aid not in present
+    ]
+    for aid in gone:
+        entry = pending.pop(aid)
+        cache.pop(aid, None)
+        dropped[aid] = review_state.now_iso()
+        logger.info(
+            "Dropped pending review for %s — %s (no longer in %s)",
+            entry.get("name", ""), entry.get("artist", ""), playlist_name,
+        )
+    return gone
 
 
 def _apple_context(track: dict, idx: int, all_tracks: list[dict]) -> dict:
@@ -277,6 +334,8 @@ def sync_playlist(
     entry: dict,
     sp: spotipy.Spotify,
     cache: dict,
+    pending: dict,
+    dropped: dict,
     dry_run: bool = False,
     force: bool = False,
     allow_large_removal: bool = False,
@@ -296,7 +355,7 @@ def sync_playlist(
     logger.info("Apple Music: %d tracks (%s)", len(apple_tracks), apple_name)
 
     uris, unmatched, uncertain, cache_hits = _resolve_tracks(
-        apple_tracks, sp, cache, force=force,
+        apple_tracks, sp, cache, pending, name, force=force,
     )
     logger.info(
         "Resolved %d/%d (cache hits: %d, unmatched: %d, uncertain: %d)",
@@ -310,6 +369,10 @@ def sync_playlist(
         sp, spotify_id, uris, name,
         dry_run=dry_run, allow_large_removal=allow_large_removal,
     )
+
+    # Only after a successful sync: a failed Apple fetch must not look like
+    # every pending track left the playlist.
+    _prune_pending(pending, dropped, cache, name, apple_tracks)
 
     return {
         "name": name,
@@ -349,13 +412,15 @@ def main():
     sp = build_client()
     cache = _load_cache()
     initial_cache_size = len(cache)
+    pending = review_state.load_pending()
+    dropped = review_state.load_dropped()
 
     report_playlists: list[dict] = []
     failed: list[str] = []
     for entry in playlists:
         try:
             fragment = sync_playlist(
-                entry, sp, cache,
+                entry, sp, cache, pending, dropped,
                 dry_run=args.dry_run, force=args.force,
                 allow_large_removal=args.allow_large_removal,
             )
@@ -368,6 +433,9 @@ def main():
     if not args.dry_run:
         _save_cache(cache)
         logger.info("Cache: %d → %d mappings", initial_cache_size, len(cache))
+        review_state.save_pending(pending)
+        review_state.save_dropped(dropped)
+        logger.info("Pending review: %d", len(pending))
 
     _write_review_report(report_playlists)
 

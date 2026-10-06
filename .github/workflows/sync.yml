@@ -20,7 +20,7 @@ on:
 
 permissions:
   contents: write   # commit cache back
-  issues: write     # create/update review issues
+  issues: write     # create review issues / comment on re-runs
 
 concurrency:
   group: sync
@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Apply /override comments from review issue
+      - name: Apply /override and /accept comments from open review issues
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}

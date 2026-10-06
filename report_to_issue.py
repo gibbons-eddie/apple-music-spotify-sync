@@ -81,7 +81,7 @@ def _render_errors(report: dict) -> list[str]:
     errored = [p for p in report.get("playlists", []) if p.get("error")]
     if not errored:
         return []
-    lines = ["## ⚠️ Sync failed"]
+    lines = ["## Sync failed"]
     for p in errored:
         lines.append(f"### {p['name']}")
         lines.append(p["error"])
@@ -101,7 +101,7 @@ def _render_run_changes(report: dict) -> list[str]:
         if p.get("error") or "resolved" not in p:
             continue
         lines.append(
-            f"**{p['name']}** — ✅ synced, {p['resolved']}/{p.get('apple_count', 0)} resolved"
+            f"**{p['name']}** — synced, {p['resolved']}/{p.get('apple_count', 0)} resolved"
         )
         changed = _render_changes(p.get("changes"))
         lines.extend(changed or ["- No changes to Spotify."])
@@ -120,7 +120,7 @@ def _render_alerts(report: dict) -> list[str]:
     if not flagged:
         return []
     lines = [
-        "## 🔎 Playlist changed outside the sync",
+        "## Playlist changed outside the sync",
         "_The sync still ran. Recorded for proof; full version history is in "
         "`cache/playlist_history.json`._",
         "",

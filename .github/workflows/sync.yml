@@ -13,10 +13,6 @@ on:
         description: "Ignore cache and re-match every track"
         type: boolean
         default: false
-      allow_large_removal:
-        description: "Bypass the guard that refuses to remove >15% of the playlist"
-        type: boolean
-        default: false
 
 permissions:
   contents: write   # commit cache back
@@ -69,9 +65,6 @@ jobs:
           args=(--playlist "Eddie Gibbons Essentials")
           if [ "${{ inputs.force }}" = "true" ]; then
             args+=(--force)
-          fi
-          if [ "${{ inputs.allow_large_removal }}" = "true" ]; then
-            args+=(--allow-large-removal)
           fi
           python3 sync.py "${args[@]}"
 

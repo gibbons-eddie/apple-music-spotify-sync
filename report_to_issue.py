@@ -73,6 +73,40 @@ def _render_errors(report: dict) -> list[str]:
     return lines
 
 
+def _fmt_version(v: dict) -> str:
+    run = f"run #{v['run']}" if v.get("run") else "local run"
+    return f"first synced {v.get('first_synced_at', '?')}, last synced {v.get('last_synced_at', '?')} ({run})"
+
+
+def _render_alerts(report: dict) -> list[str]:
+    """Revert / outside-change alerts. Informational: the sync still ran."""
+    flagged = [(p, a) for p in report.get("playlists", []) for a in p.get("alerts", [])]
+    if not flagged:
+        return []
+    lines = [
+        "## 🔎 Playlist changed outside the sync",
+        "_The sync still ran. Recorded for proof; full version history is in "
+        "`cache/playlist_history.json`._",
+        "",
+    ]
+    for p, a in flagged:
+        side = "Apple Music" if a["kind"] == "apple_revert" else "Spotify"
+        lines.append(f"### {p['name']} — {side}")
+        lines.append(a["summary"])
+        last = a.get("last_version") or {}
+        lines.append(f"- Last synced version: {_fmt_version(last)}")
+        matched = a.get("matched_version")
+        if matched:
+            lines.append(f"- Matches older version: {_fmt_version(matched)}")
+        for label, key in (("Missing vs last sync", "removed"), ("New vs last sync", "added")):
+            tracks = a.get(key, [])
+            if tracks:
+                lines.append(f"- **{label} ({len(tracks)}):**")
+                lines.extend(f"  - {t['name']} — {t['artist']}" for t in tracks)
+        lines.append("")
+    return lines
+
+
 def _render_playlist(p: dict) -> list[str]:
     unmatched = p.get("unmatched", [])
     uncertain = p.get("uncertain", [])
@@ -167,6 +201,7 @@ def render_issue_body(report: dict, pending: dict) -> str:
     lines.append(f"_Generated {report.get('generated_at', '?')}_")
     lines.append("")
     lines.extend(_render_errors(report))
+    lines.extend(_render_alerts(report))
     lines.append(f"- **Unmatched:** {total_unmatched}")
     lines.append(f"- **Uncertain (score < {MATCH_THRESHOLD}):** {total_uncertain}")
     lines.append(f"- **Pending from prior runs:** {len(prior)}")
@@ -200,6 +235,7 @@ def render_rerun_comment(report: dict, pending: dict, run_number: str) -> str:
             lines.append(f"{p['name']}: resolved {p['resolved']}/{p.get('apple_count', 0)} this run.")
     lines.append("")
     lines.extend(_render_errors(report))
+    lines.extend(_render_alerts(report))
 
     new_items: list[str] = []
     for p in playlists:
@@ -223,7 +259,7 @@ def has_review_items(report: dict, pending: dict) -> bool:
     if pending:
         return True
     for p in report.get("playlists", []):
-        if p.get("unmatched") or p.get("uncertain") or p.get("error"):
+        if p.get("unmatched") or p.get("uncertain") or p.get("error") or p.get("alerts"):
             return True
     return False
 
@@ -277,7 +313,7 @@ def main():
     report = json.loads(REPORT_FILE.read_text())
     pending = review_state.load_pending()
     if not has_review_items(report, pending):
-        print("Report is clean (no errors, unmatched, uncertain or pending). Nothing to post.")
+        print("Report is clean (no errors, alerts, unmatched, uncertain or pending). Nothing to post.")
         return 0
 
     run_number = os.environ.get("GITHUB_RUN_NUMBER", "")

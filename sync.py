@@ -11,6 +11,7 @@ from collections import Counter
 
 import spotipy
 
+import playlist_history
 import review_state
 from apple_music import fetch_apple_playlist
 from spotify_match import MATCH_THRESHOLD, build_client, find_spotify_track
@@ -232,7 +233,9 @@ def _diff_sync_playlist(
     playlist_id: str,
     target_uris: list[str],
     dry_run: bool = False,
-):
+) -> list[str]:
+    """Bring the Spotify playlist in line with target_uris. Returns what was
+    there before any writes."""
     current = _get_current_playlist_uris(sp, playlist_id)
     target_counts = Counter(target_uris)
     current_counts = Counter(current)
@@ -263,7 +266,7 @@ def _diff_sync_playlist(
 
     if dry_run:
         logger.info("[dry-run] no changes written")
-        return
+        return current
 
     if to_remove_all:
         for i in range(0, len(to_remove_all), 100):
@@ -284,6 +287,8 @@ def _diff_sync_playlist(
             )
             time.sleep(0.1)
         logger.info("Reordered: %d moves", len(reorder_moves))
+
+    return current
 
 
 def _write_unmatched(unmatched: list[dict], playlist_name: str):
@@ -309,6 +314,7 @@ def sync_playlist(
     cache: dict,
     pending: dict,
     dropped: dict,
+    history: dict,
     dry_run: bool = False,
     force: bool = False,
 ) -> dict:
@@ -337,7 +343,16 @@ def sync_playlist(
     if unmatched:
         _write_unmatched(unmatched, name)
 
-    _diff_sync_playlist(sp, spotify_id, uris, dry_run=dry_run)
+    spotify_before = _diff_sync_playlist(sp, spotify_id, uris, dry_run=dry_run)
+
+    alerts = playlist_history.detect(history, name, apple_tracks, spotify_before)
+    for alert in alerts:
+        logger.warning("ALERT [%s] %s", alert["kind"], alert["summary"])
+        for t in alert["removed"]:
+            logger.warning("  - removed vs last sync: %s — %s", t["name"], t["artist"])
+        for t in alert["added"]:
+            logger.warning("  + added vs last sync: %s — %s", t["name"], t["artist"])
+    playlist_history.record(history, name, apple_tracks, cache, uris)
 
     # Only after a successful sync: a failed Apple fetch must not look like
     # every pending track left the playlist.
@@ -351,6 +366,7 @@ def sync_playlist(
         "resolved": len(uris),
         "unmatched": unmatched,
         "uncertain": uncertain,
+        "alerts": alerts,
     }
 
 
@@ -379,13 +395,14 @@ def main():
     initial_cache_size = len(cache)
     pending = review_state.load_pending()
     dropped = review_state.load_dropped()
+    history = playlist_history.load()
 
     report_playlists: list[dict] = []
     failed: list[str] = []
     for entry in playlists:
         try:
             fragment = sync_playlist(
-                entry, sp, cache, pending, dropped,
+                entry, sp, cache, pending, dropped, history,
                 dry_run=args.dry_run, force=args.force,
             )
             report_playlists.append(fragment)
@@ -399,6 +416,7 @@ def main():
         logger.info("Cache: %d → %d mappings", initial_cache_size, len(cache))
         review_state.save_pending(pending)
         review_state.save_dropped(dropped)
+        playlist_history.save(history)
         logger.info("Pending review: %d", len(pending))
 
     _write_review_report(report_playlists)

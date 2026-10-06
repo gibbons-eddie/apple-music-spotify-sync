@@ -62,14 +62,50 @@ def prior_pending(report: dict, pending: dict) -> dict:
     return {aid: e for aid, e in pending.items() if aid not in shown}
 
 
+def _render_changes(changes: dict | None) -> list[str]:
+    """Song-level added/removed lists (empty when nothing changed)."""
+    if not changes:
+        return []
+    lines: list[str] = []
+    for label, key in (("Added", "added"), ("Removed", "removed")):
+        tracks = changes.get(key, [])
+        if tracks:
+            lines.append(f"- **{label} ({len(tracks)}):**")
+            lines.extend(f"  - {t['name']} — {t['artist']}" for t in tracks)
+    if changes.get("reordered"):
+        lines.append(f"- **Reordered:** {changes['reordered']} moves")
+    return lines
+
+
 def _render_errors(report: dict) -> list[str]:
     errored = [p for p in report.get("playlists", []) if p.get("error")]
     if not errored:
         return []
     lines = ["## ⚠️ Sync failed"]
     for p in errored:
-        lines.append(f"- **{p['name']}:** {p['error']}")
-    lines.append("")
+        lines.append(f"### {p['name']}")
+        lines.append(p["error"])
+        planned = _render_changes(p.get("planned_changes"))
+        if planned:
+            lines.append("")
+            lines.append("Changes the run was making when it failed (some may already be applied):")
+            lines.extend(planned)
+        lines.append("")
+    return lines
+
+
+def _render_run_changes(report: dict) -> list[str]:
+    """What each successful playlist sync changed on Spotify this run."""
+    lines: list[str] = []
+    for p in report.get("playlists", []):
+        if p.get("error") or "resolved" not in p:
+            continue
+        lines.append(
+            f"**{p['name']}** — ✅ synced, {p['resolved']}/{p.get('apple_count', 0)} resolved"
+        )
+        changed = _render_changes(p.get("changes"))
+        lines.extend(changed or ["- No changes to Spotify."])
+        lines.append("")
     return lines
 
 
@@ -218,6 +254,10 @@ def render_issue_body(report: dict, pending: dict) -> str:
     for p in playlists:
         lines.extend(_render_playlist(p))
     lines.extend(_render_pending(prior))
+    run_changes = _render_run_changes(report)
+    if run_changes:
+        lines.append("## Spotify changes this run")
+        lines.extend(run_changes)
 
     return "\n".join(lines).rstrip() + "\n"
 
@@ -228,12 +268,7 @@ def render_rerun_comment(report: dict, pending: dict, run_number: str) -> str:
     run = f" #{run_number}" if run_number else ""
 
     lines = [f"## Re-run{run} — {_display_time(report)}", ""]
-    for p in playlists:
-        if p.get("error"):
-            continue
-        if "resolved" in p:
-            lines.append(f"{p['name']}: resolved {p['resolved']}/{p.get('apple_count', 0)} this run.")
-    lines.append("")
+    lines.extend(_render_run_changes(report))
     lines.extend(_render_errors(report))
     lines.extend(_render_alerts(report))
 
@@ -312,12 +347,27 @@ def main():
 
     report = json.loads(REPORT_FILE.read_text())
     pending = review_state.load_pending()
-    if not has_review_items(report, pending):
-        print("Report is clean (no errors, alerts, unmatched, uncertain or pending). Nothing to post.")
-        return 0
-
+    needs_review = has_review_items(report, pending)
     run_number = os.environ.get("GITHUB_RUN_NUMBER", "")
     repo = os.environ.get("GITHUB_REPOSITORY")
+
+    if not needs_review:
+        # A clean run normally posts nothing. But if it's a re-run within the
+        # cluster window of an open review issue, record the outcome there so
+        # the thread shows how that issue resolved.
+        parent = find_cluster_parent(repo, datetime.now(timezone.utc)) if repo else None
+        if not parent:
+            print("Report is clean (no errors, alerts, unmatched, uncertain or pending). Nothing to post.")
+            return 0
+        body = render_rerun_comment(report, pending, run_number)
+        try:
+            _gh("issue", "comment", parent, "--repo", repo, "--body", body)
+        except subprocess.CalledProcessError:
+            print(body)
+            return 1
+        print(f"Clean re-run: commented outcome on issue #{parent}")
+        return 0
+
     if not repo:
         print("GITHUB_REPOSITORY not set; printing the body to stdout instead.")
         print(render_issue_body(report, pending))

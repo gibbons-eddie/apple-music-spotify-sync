@@ -29,6 +29,14 @@ NEEDS_REVIEW_FILE = REPORTS_DIR / "needs_review.json"
 SEARCH_DELAY_SECONDS = 0.15
 
 
+class PlaylistSyncError(RuntimeError):
+    """A playlist sync failure carrying report context (e.g. planned changes)."""
+
+    def __init__(self, message: str, details: dict | None = None):
+        super().__init__(message)
+        self.details = details or {}
+
+
 def _load_cache() -> dict:
     if CACHE_FILE.exists():
         return json.loads(CACHE_FILE.read_text())
@@ -66,7 +74,12 @@ def _resolve_tracks(
             if e.http_status in (401, 403):
                 # Credentials or app-registration problem — can't be per-track.
                 # Fail fast so Spotify isn't modified based on a broken search.
-                raise
+                raise PlaylistSyncError(
+                    f"Spotify returned {e.http_status} while searching for "
+                    f"{track['name']} — {track['artist']} (Apple ID {apple_id or '?'}): {e.msg}. "
+                    "Check the app's User Management on the Spotify Developer Dashboard "
+                    "and the SPOTIFY_REFRESH_TOKEN secret.",
+                ) from e
             logger.warning("Search error for %s — %s: %s", track["name"], track["artist"], e)
             match = None
 
@@ -181,11 +194,15 @@ def _spotify_summary(spotify_track: dict, score: float, source: str) -> dict:
     }
 
 
-def _get_current_playlist_uris(sp: spotipy.Spotify, playlist_id: str) -> list[str]:
+def _get_current_playlist_uris(
+    sp: spotipy.Spotify, playlist_id: str,
+) -> tuple[list[str], dict[str, dict]]:
+    """Track URIs in playlist order, plus {uri: {name, artist}} for reporting."""
     info = sp.playlist(playlist_id)
     name = info.get("name", "?")
 
     uris: list[str] = []
+    labels: dict[str, dict] = {}
     expected = None
     offset = 0
     while True:
@@ -200,6 +217,10 @@ def _get_current_playlist_uris(sp: spotipy.Spotify, playlist_id: str) -> list[st
             track = entry.get("item") or entry.get("track")
             if track and track.get("uri"):
                 uris.append(track["uri"])
+                labels[track["uri"]] = {
+                    "name": track.get("name", ""),
+                    "artist": ", ".join(a.get("name", "") for a in track.get("artists", [])),
+                }
         if not page.get("next"):
             break
         offset += 100
@@ -210,7 +231,7 @@ def _get_current_playlist_uris(sp: spotipy.Spotify, playlist_id: str) -> list[st
             "Read mismatch: Spotify reports %d total but we read %d URIs (likely local tracks or unavailable items)",
             expected, len(uris),
         )
-    return uris
+    return uris, labels
 
 
 def _plan_reorder(current: list[str], target: list[str]) -> list[tuple[int, int]]:
@@ -232,11 +253,15 @@ def _diff_sync_playlist(
     sp: spotipy.Spotify,
     playlist_id: str,
     target_uris: list[str],
+    target_labels: dict[str, dict],
     dry_run: bool = False,
-) -> list[str]:
-    """Bring the Spotify playlist in line with target_uris. Returns what was
-    there before any writes."""
-    current = _get_current_playlist_uris(sp, playlist_id)
+) -> tuple[list[str], dict]:
+    """Bring the Spotify playlist in line with target_uris.
+
+    Returns what was there before any writes, and the song-level changes. If a
+    write fails, raises PlaylistSyncError carrying the planned changes.
+    """
+    current, current_labels = _get_current_playlist_uris(sp, playlist_id)
     target_counts = Counter(target_uris)
     current_counts = Counter(current)
 
@@ -264,10 +289,40 @@ def _diff_sync_playlist(
         len(current), len(to_add), len(to_remove_all), len(reorder_moves), unchanged_count,
     )
 
+    def _named(uris: list[str], labels: dict) -> list[dict]:
+        return [{"uri": u, **labels.get(u, {"name": "?", "artist": "?"})} for u in uris]
+
+    changes = {
+        "added": _named(to_add, target_labels),
+        "removed": _named(to_remove_all, current_labels),
+        "reordered": len(reorder_moves),
+    }
+    for t in changes["removed"]:
+        logger.info("  - %s — %s", t["name"], t["artist"])
+    for t in changes["added"]:
+        logger.info("  + %s — %s", t["name"], t["artist"])
+
     if dry_run:
         logger.info("[dry-run] no changes written")
-        return current
+        return current, changes
 
+    try:
+        _apply_changes(sp, playlist_id, to_remove_all, to_add, reorder_moves)
+    except Exception as e:
+        raise PlaylistSyncError(
+            f"Spotify write failed partway through: {e}",
+            {"planned_changes": changes},
+        ) from e
+    return current, changes
+
+
+def _apply_changes(
+    sp: spotipy.Spotify,
+    playlist_id: str,
+    to_remove_all: list[str],
+    to_add: list[str],
+    reorder_moves: list[tuple[int, int]],
+):
     if to_remove_all:
         for i in range(0, len(to_remove_all), 100):
             sp.playlist_remove_all_occurrences_of_items(playlist_id, to_remove_all[i:i + 100])
@@ -287,8 +342,6 @@ def _diff_sync_playlist(
             )
             time.sleep(0.1)
         logger.info("Reordered: %d moves", len(reorder_moves))
-
-    return current
 
 
 def _write_unmatched(unmatched: list[dict], playlist_name: str):
@@ -343,7 +396,13 @@ def sync_playlist(
     if unmatched:
         _write_unmatched(unmatched, name)
 
-    spotify_before = _diff_sync_playlist(sp, spotify_id, uris, dry_run=dry_run)
+    target_labels = {
+        cache[t["apple_id"]]: {"name": t.get("name", ""), "artist": t.get("artist", "")}
+        for t in apple_tracks if t.get("apple_id") in cache
+    }
+    spotify_before, changes = _diff_sync_playlist(
+        sp, spotify_id, uris, target_labels, dry_run=dry_run,
+    )
 
     alerts = playlist_history.detect(history, name, apple_tracks, spotify_before)
     for alert in alerts:
@@ -367,6 +426,7 @@ def sync_playlist(
         "unmatched": unmatched,
         "uncertain": uncertain,
         "alerts": alerts,
+        "changes": changes,
     }
 
 
@@ -408,7 +468,11 @@ def main():
             report_playlists.append(fragment)
         except Exception as e:
             logger.error("Failed syncing %s: %s", entry["name"], e)
-            report_playlists.append({"name": entry["name"], "error": str(e)})
+            report_playlists.append({
+                "name": entry["name"],
+                "error": str(e),
+                **getattr(e, "details", {}),
+            })
             failed.append(entry["name"])
 
     if not args.dry_run:

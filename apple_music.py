@@ -11,7 +11,9 @@ logger = logging.getLogger(__name__)
 
 AM_BASE = "https://amp-api.music.apple.com"
 AM_WEB = "https://music.apple.com"
-JS_FILE_RE = re.compile(r"/assets/index-legacy[~\-][^/]+\.js")
+# Apple historically shipped the bundle as `index-legacy~<hash>.js` and
+# switched to `index~<hash>.js` around 2026-10. Match either.
+JS_FILE_RE = re.compile(r"/assets/index(?:-legacy)?[~\-][^/]+\.js")
 # Match a full JWT (header.payload.signature, base64url segments joined by dots).
 # The old pattern `eyJh[^"]+` assumed the header started with the `alg` key
 # (base64 `eyJh...`); Apple now emits `typ` first (`eyJ0...`), which broke it.
@@ -35,7 +37,7 @@ def _scrape_apple_token() -> str:
     match = JS_FILE_RE.search(resp.text)
     if not match:
         raise RuntimeError(
-            "Could not find index-legacy JS bundle in music.apple.com HTML. "
+            "Could not find index JS bundle in music.apple.com HTML. "
             "Apple may have changed their bundle naming."
         )
     js_url = AM_WEB + match.group(0)

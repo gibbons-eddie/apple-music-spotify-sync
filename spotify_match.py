@@ -204,6 +204,9 @@ def find_spotify_track(
     try:
         results = sp.search(q=query, type="track", limit=10)
     except spotipy.SpotifyException as e:
+        if e.http_status in (401, 403):
+            # Auth/registration failure, not a per-track miss — let sync.py abort.
+            raise
         logger.warning("Search failed for %s: %s", query, e)
         return None
 

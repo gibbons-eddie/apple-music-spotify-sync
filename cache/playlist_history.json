@@ -259,6 +259,133 @@
           "uri": "spotify:track:6XaJfhwof7qIgbbXO5tIQI"
         }
       ]
+    },
+    {
+      "first_synced_at": "2026-10-10T13:38:47+00:00",
+      "last_synced_at": "2026-10-10T13:38:47+00:00",
+      "run": "40",
+      "tracks": [
+        {
+          "apple_id": "6781644634",
+          "name": "Powerlines",
+          "artist": "beabadoobee & Brendan Yates",
+          "uri": "spotify:track:7uvsxYvJwAGTdxMNJrgtbQ"
+        },
+        {
+          "apple_id": "6800139146",
+          "name": "Cabin In The Woods",
+          "artist": "Weston Estate",
+          "uri": "spotify:track:6pWbirkKEw6bvr8rHP1H11"
+        },
+        {
+          "apple_id": "6781074875",
+          "name": "Father To Son",
+          "artist": "Queen",
+          "uri": "spotify:track:6uFv3Vmjp9ajGDE7GEQQkX"
+        },
+        {
+          "apple_id": "785231830",
+          "name": "A National Acrobat",
+          "artist": "Black Sabbath",
+          "uri": "spotify:track:0QuclG0uX1lm9E7uRfVWzc"
+        },
+        {
+          "apple_id": "6813245036",
+          "name": "LUH BIRK",
+          "artist": "Yeat",
+          "uri": "spotify:track:49PmdT1y8jAtTLzw7kOH5K"
+        },
+        {
+          "apple_id": "1708972374",
+          "name": "Gold",
+          "artist": "Cleo Sol",
+          "uri": "spotify:track:1cwQahQmKdmKaCijjdNEv3"
+        },
+        {
+          "apple_id": "1866733075",
+          "name": "Why You Wanna Fight?",
+          "artist": "Bruno Mars",
+          "uri": "spotify:track:3Ac4AjYkqsvop2ydbSAhTX"
+        },
+        {
+          "apple_id": "535572389",
+          "name": "Hot Together",
+          "artist": "The Pointer Sisters",
+          "uri": "spotify:track:2KWhl75cqqKWEqTIHv1Zsd"
+        },
+        {
+          "apple_id": "1442219535",
+          "name": "¿Por qué Me Tratas Así?",
+          "artist": "Wisin & Yandel",
+          "uri": "spotify:track:2TDASAexPx3WzMRKV7anoy"
+        },
+        {
+          "apple_id": "1457224042",
+          "name": "Ven Porque Te Necesito",
+          "artist": "Los Temerarios",
+          "uri": "spotify:track:4MNfkZ8dtva3cjJ2biqnDS"
+        },
+        {
+          "apple_id": "6810219386",
+          "name": "Call Me (Honey Dijon Remix)",
+          "artist": "FLO & Honey Dijon",
+          "uri": "spotify:track:1irExD9CdFYvw7IAFnoeNr"
+        },
+        {
+          "apple_id": "1710860382",
+          "name": "Igual Que Un Ángel",
+          "artist": "Kali Uchis & Peso Pluma",
+          "uri": "spotify:track:6XaJfhwof7qIgbbXO5tIQI"
+        },
+        {
+          "apple_id": "1696327405",
+          "name": "Lowdown (2023 Remaster)",
+          "artist": "Boz Scaggs",
+          "uri": "spotify:track:5QhikAUv91oMAaFnfKz22u"
+        },
+        {
+          "apple_id": "6773856156",
+          "name": "For Your Entertainment",
+          "artist": "Ellie Goulding",
+          "uri": "spotify:track:1i1Blr6MbP98bkiiDPM4um"
+        },
+        {
+          "apple_id": "61016765",
+          "name": "Tifa's Theme",
+          "artist": "Nobuo Uematsu",
+          "uri": "spotify:track:76hjP6yrfypRpf82vhNGnr"
+        },
+        {
+          "apple_id": "1715021327",
+          "name": "Oldschool, Baby (Piano Mix)",
+          "artist": "Westbam & Nena",
+          "uri": "spotify:track:1JQwD4eYat7xbShs74ZUbJ"
+        },
+        {
+          "apple_id": "1645128759",
+          "name": "Love Comes Quickly",
+          "artist": "Pet Shop Boys",
+          "uri": "spotify:track:7gpg8xck65nC8JhT1hElHL"
+        },
+        {
+          "apple_id": "252606600",
+          "name": "Nothin' Else",
+          "artist": "Justin Timberlake",
+          "uri": "spotify:track:5r757MKjSoampJi977D1QO"
+        },
+        {
+          "apple_id": "1744216526",
+          "name": "That's Life",
+          "artist": "Luna Li",
+          "uri": "spotify:track:45qWYodQFrF6TJ77NtF4Ke"
+        },
+        {
+          "apple_id": "6812461292",
+          "name": "Geothermal Jungle",
+          "artist": "Gordy Haab",
+          "uri": "spotify:track:0L1ei8JZk0q9JOtssavuyr"
+        }
+      ]
     }
   ]
 }

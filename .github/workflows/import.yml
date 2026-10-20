@@ -1,0 +1,96 @@
+name: Import Spotify playlist → Apple Music
+
+on:
+  workflow_dispatch:
+    inputs:
+      spotify_url:
+        description: "Spotify playlist link"
+        type: string
+        required: true
+      dry_run:
+        description: "Match and report only; don't write to Apple Music"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # commit cache back
+  issues: write     # create import review issues / comment on re-runs
+
+# Shares the weekly sync's group so the two never push cache commits at once.
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    env:
+      SPOTIFY_URL: ${{ inputs.spotify_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Fail fast on an Apple catalog break or an expired Music User Token,
+      # before any cache, library or issue writes happen.
+      - name: Smoke test (Apple Music)
+        env:
+          APPLE_MUSIC_USER_TOKEN: ${{ secrets.APPLE_MUSIC_USER_TOKEN }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python3 smoke_test.py --import
+          else
+            python3 smoke_test.py --import --library
+          fi
+
+      - name: Apply /override and /accept comments from open import review issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 apply_overrides.py --mode import
+
+      - name: Run import
+        env:
+          APPLE_MUSIC_USER_TOKEN: ${{ secrets.APPLE_MUSIC_USER_TOKEN }}
+        run: |
+          args=("$SPOTIFY_URL")
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          python3 spotify_to_apple.py "${args[@]}"
+
+      - name: Post import review issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 report_import_issue.py
+
+      - name: Upload reports as artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: import-reports
+          path: reports/
+          if-no-files-found: ignore
+
+      - name: Commit updated cache
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain cache/)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add cache/
+            git commit -m "chore: update import cache [skip ci]"
+            git push
+          else
+            echo "No cache changes to commit."
+          fi

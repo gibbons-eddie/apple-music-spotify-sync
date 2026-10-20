@@ -11,6 +11,7 @@ Exits non-zero with a message naming the failing probe, so an upstream break
 shows up as a clear CI failure instead of a traceback mid-sync.
 """
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -49,6 +50,16 @@ def probe_spotify(spotify_id: str) -> str:
     return f"token refreshed, search OK, playlist read OK ({info.get('name', spotify_id)})"
 
 
+def probe_apple_library() -> str:
+    from apple_client import AppleClient
+
+    client = AppleClient()
+    if not client.has_library_access:
+        raise RuntimeError("APPLE_MUSIC_USER_TOKEN is not set.")
+    client._request("GET", "/v1/me/library/playlists", library=True, params={"limit": 1})
+    return "Music User Token accepted, library readable"
+
+
 def _explain(exc: Exception) -> str:
     if isinstance(exc, spotipy.SpotifyException) and exc.http_status in (401, 403):
         return (
@@ -57,17 +68,36 @@ def _explain(exc: Exception) -> str:
             "(the account must be listed while the app is in Development Mode) "
             "and the SPOTIFY_REFRESH_TOKEN secret."
         )
+    from apple_client import USER_TOKEN_HELP, AppleAuthError
+    if isinstance(exc, AppleAuthError):
+        return str(exc)
+    if isinstance(exc, RuntimeError) and "APPLE_MUSIC_USER_TOKEN" in str(exc):
+        return f"{exc} {USER_TOKEN_HELP}"
     if isinstance(exc, requests.HTTPError) and exc.response is not None:
         return f"HTTP {exc.response.status_code} from {exc.response.url}"
     return f"{type(exc).__name__}: {exc}"
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Pre-run health check")
+    parser.add_argument(
+        "--import", dest="import_mode", action="store_true",
+        help="Checks for the Spotify → Apple import: Apple catalog, plus the Apple library "
+             "when --library is given (no Spotify API credentials needed)",
+    )
+    parser.add_argument("--library", action="store_true", help="With --import: require Apple library access")
+    args = parser.parse_args()
+
     entry = _playlist()
-    probes = [
-        ("Apple Music", lambda: probe_apple(entry["apple_id"])),
-        ("Spotify", lambda: probe_spotify(entry["spotify_id"])),
-    ]
+    if args.import_mode:
+        probes = [("Apple Music catalog", lambda: probe_apple(entry["apple_id"]))]
+        if args.library:
+            probes.append(("Apple Music library", probe_apple_library))
+    else:
+        probes = [
+            ("Apple Music", lambda: probe_apple(entry["apple_id"])),
+            ("Spotify", lambda: probe_spotify(entry["spotify_id"])),
+        ]
 
     failed = []
     for label, probe in probes:

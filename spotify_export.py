@@ -142,7 +142,8 @@ def fetch_spotify_playlist(playlist_id_or_url: str,
         data = resp.json()
 
         for item in data.get("items", []):
-            track = item.get("track")
+            # Spotify returns the track under "item" (was "track" in older responses).
+            track = item.get("item") or item.get("track")
             if not track or track.get("type") != "track":
                 continue
 

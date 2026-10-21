@@ -30,6 +30,15 @@ def _pick_best_isrc_song(songs: list[dict], source: dict) -> dict:
     return songs[0]
 
 
+def _score(source: dict, candidate: dict) -> float:
+    # A basic Spotify track list (embed fallback) has no album. Treat the album
+    # as matching rather than scoring it 0, so a missing field doesn't push
+    # every pick below the review threshold; title, artist and length decide.
+    if not source.get("album"):
+        source = {**source, "album": candidate.get("album", "")}
+    return score_match(source, candidate)
+
+
 def find_apple_song(spotify_track: dict, client: AppleClient) -> dict | None:
     """spotify_track is a spotify_export track (name, artist, album, duration_ms, isrc).
 
@@ -56,7 +65,7 @@ def find_apple_song(spotify_track: dict, client: AppleClient) -> dict | None:
 
     preferred = [s for s in songs if is_original_release(song_to_plain(s), source)]
     scored = sorted(
-        ((s, score_match(source, song_to_plain(s))) for s in (preferred or songs)),
+        ((s, _score(source, song_to_plain(s))) for s in (preferred or songs)),
         key=lambda x: x[1],
         reverse=True,
     )

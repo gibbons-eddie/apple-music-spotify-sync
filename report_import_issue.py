@@ -64,6 +64,12 @@ def _header(report: dict) -> list[str]:
                      f" \"{ap.get('name', '?')}\"")
     if "resolved" in report:
         lines.append(f"- **Matched:** {report['resolved']}/{report.get('total', 0)} songs")
+    if sp.get("basic_info"):
+        lines.append("- **Note:** Spotify only allowed the basic track list for this playlist "
+                     "(no album or ISRC), so songs were matched by title, artist and length.")
+    if report.get("backup"):
+        lines.append(f"- **Backup:** {', '.join(f'`{p}`' for p in report['backup'])} "
+                     "(in the run's import-reports artifact)")
     lines.append("")
     return lines
 

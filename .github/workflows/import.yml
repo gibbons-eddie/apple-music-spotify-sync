@@ -11,6 +11,10 @@ on:
         description: "Match and report only; don't write to Apple Music"
         type: boolean
         default: true
+      save_text:
+        description: "Also save the playlist as .txt and .csv (in the run's artifact)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # commit cache back
@@ -65,6 +69,9 @@ jobs:
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             args+=(--dry-run)
           fi
+          if [ "${{ inputs.save_text }}" = "true" ]; then
+            args+=(--save-text)
+          fi
           python3 spotify_to_apple.py "${args[@]}"
 
       - name: Post import review issue
@@ -79,7 +86,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: import-reports
-          path: reports/
+          path: |
+            reports/
+            exports/
           if-no-files-found: ignore
 
       - name: Commit updated cache

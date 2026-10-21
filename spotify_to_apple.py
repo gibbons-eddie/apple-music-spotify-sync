@@ -8,11 +8,15 @@ runs find it again (cache/imports.json, then the marker) and append the songs
 it's missing. Apple's public API can't remove or reorder songs, so songs to
 remove and songs out of order are listed in the review issue to fix by hand.
 
+--save-text also saves the Spotify playlist as a readable .txt and a .csv under
+exports/ (git-ignored), e.g. to keep a copy of a playlist you're backing up.
+
 --dry-run matches everything and writes the review report, but never writes to
 the Apple library. It works without APPLE_MUSIC_USER_TOKEN; the library is then
 not checked.
 """
 
+import csv
 import sys
 import json
 import time
@@ -21,6 +25,7 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 
+import requests
 from rapidfuzz import fuzz
 
 import review_state
@@ -33,7 +38,7 @@ from apple_client import (
 )
 from apple_match import find_apple_song
 from compare import _clean_artist, _clean_title, _normalize_text
-from spotify_export import _extract_playlist_id, fetch_spotify_playlist
+from spotify_export import _extract_playlist_id, _slugify, fetch_spotify_playlist
 from spotify_match import MATCH_THRESHOLD
 
 logger = logging.getLogger(__name__)
@@ -44,6 +49,8 @@ FORWARD_CACHE_FILE = CACHE_DIR / "track_mapping.json"
 REVERSE_CACHE_FILE = CACHE_DIR / "reverse_mapping.json"
 IMPORTS_FILE = CACHE_DIR / "imports.json"
 REPORT_FILE = PROJECT_DIR / "reports" / "import_review.json"
+# Local text backups of each imported Spotify playlist (git-ignored).
+EXPORTS_DIR = PROJECT_DIR / "exports"
 
 SEARCH_DELAY_SECONDS = 0.15
 MARKER_PREFIX = "Imported from Spotify playlist"
@@ -87,6 +94,56 @@ def load_reverse_cache() -> dict:
             seeded.setdefault(uri.rsplit(":", 1)[-1], apple_id)
     logger.info("Seeded reverse cache with %d mappings from track_mapping.json", len(seeded))
     return seeded
+
+
+# --- reading Spotify -------------------------------------------------------------
+
+def read_spotify_playlist(url: str) -> tuple[list[dict], str, bool]:
+    """Returns (tracks, name, basic). Falls back to the embed page's basic track
+    list (title, artist, length; no album or ISRC) when Spotify refuses the
+    detailed read, as it does for many Spotify-made playlists since Nov 2024."""
+    try:
+        tracks, name = fetch_spotify_playlist(url)
+        return tracks, name, False
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else None
+        if status not in (401, 403, 404):
+            raise
+        logger.warning(
+            "Spotify refused the detailed playlist read (HTTP %s); using the embed page's "
+            "basic track list (no album or ISRC, so matching relies on title and artist)", status,
+        )
+    tracks, name = fetch_spotify_playlist(url, embed_only=True)
+    return tracks, name, True
+
+
+def write_backup(tracks: list[dict], name: str, playlist_id: str) -> list[Path]:
+    """Save the Spotify playlist as a readable .txt and a .csv under exports/."""
+    EXPORTS_DIR.mkdir(exist_ok=True)
+    stem = EXPORTS_DIR / f"{_slugify(name) or 'playlist'}_{playlist_id}"
+    url = f"https://open.spotify.com/playlist/{playlist_id}"
+
+    def length(ms: int) -> str:
+        secs = round((ms or 0) / 1000)
+        return f"{secs // 60}:{secs % 60:02d}" if secs else ""
+
+    lines = [name, url, f"Saved {datetime.now():%Y-%m-%d} from Spotify · {len(tracks)} songs", ""]
+    width = len(str(len(tracks)))
+    for i, t in enumerate(tracks, 1):
+        extras = " · ".join(b for b in (t.get("album", ""), length(t.get("duration_ms", 0))) if b)
+        lines.append(f"{i:>{width}}. {t.get('name', '')} — {t.get('artist', '')}" + (f" · {extras}" if extras else ""))
+    txt = stem.with_suffix(".txt")
+    txt.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    csv_path = stem.with_suffix(".csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["position", "name", "artist", "album", "length", "isrc", "spotify_url"])
+        for i, t in enumerate(tracks, 1):
+            w.writerow([i, t.get("name", ""), t.get("artist", ""), t.get("album", ""),
+                        length(t.get("duration_ms", 0)), t.get("isrc", ""), t.get("spotify_url", "")])
+    logger.info("Saved backup: %s and %s", txt, csv_path)
+    return [txt, csv_path]
 
 
 # --- matching ------------------------------------------------------------------
@@ -329,7 +386,7 @@ def _named(pairs: list[tuple[dict, str]]) -> list[dict]:
 
 # --- run -------------------------------------------------------------------------
 
-def run(url: str, dry_run: bool) -> dict:
+def run(url: str, dry_run: bool, save_text: bool = False) -> dict:
     playlist_id = _extract_playlist_id(url)
     report = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -343,10 +400,13 @@ def run(url: str, dry_run: bool) -> dict:
     imports = _load_json(IMPORTS_FILE)
 
     try:
-        tracks, sp_name = fetch_spotify_playlist(url)
+        tracks, sp_name, basic = read_spotify_playlist(url)
         logger.info("Spotify: %d tracks (%s)", len(tracks), sp_name)
         report["spotify_playlist"]["name"] = sp_name
+        report["spotify_playlist"]["basic_info"] = basic
         report["total"] = len(tracks)
+        if save_text:
+            report["backup"] = [str(p.relative_to(PROJECT_DIR)) for p in write_backup(tracks, sp_name, playlist_id)]
         client = AppleClient()
 
         matched, unmatched, uncertain, hits = resolve_tracks(tracks, client, reverse, pending, playlist_id)
@@ -433,10 +493,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Import a Spotify playlist into Apple Music")
     parser.add_argument("url", help="Spotify playlist link or ID")
     parser.add_argument("--dry-run", action="store_true", help="Match and report only; no Apple writes")
+    parser.add_argument("--save-text", action="store_true",
+                        help="Also save the Spotify playlist as .txt and .csv under exports/")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
-    report = run(args.url, args.dry_run)
+    report = run(args.url, args.dry_run, args.save_text)
     return 1 if report.get("error") else 0
 
 

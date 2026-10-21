@@ -1,5 +1,5 @@
 # TEMPORARY: read-only dry runs of the Spotify → Apple import, for testing the
-# feature branch before import.yml is on main. No secrets, no Apple library
+# feature branch before import.yml is on main. Spotify read secrets only; no Apple library
 # access, no issues, no commits. Delete before merging.
 name: Import dry-run test (temporary)
 
@@ -35,6 +35,9 @@ jobs:
       - name: Dry run (normal, seeded cache)
         env:
           SPOTIFY_URL: ${{ matrix.url }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
         run: |
           python3 spotify_to_apple.py "$SPOTIFY_URL" --dry-run --save-text || echo "EXIT CODE $?"
           mkdir -p out && cp reports/import_review.json out/normal.json || true
@@ -43,6 +46,9 @@ jobs:
       - name: Dry run (fresh, no cache, to test the matcher itself)
         env:
           SPOTIFY_URL: ${{ matrix.url }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
         run: |
           cp cache/track_mapping.json out/track_mapping_known.json
           rm -f cache/reverse_mapping.json cache/track_mapping.json cache/import_*.json

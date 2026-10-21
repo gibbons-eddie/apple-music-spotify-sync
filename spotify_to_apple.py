@@ -26,6 +26,7 @@ from pathlib import Path
 from datetime import datetime
 
 import requests
+import spotipy
 from rapidfuzz import fuzz
 
 import review_state
@@ -98,21 +99,59 @@ def load_reverse_cache() -> dict:
 
 # --- reading Spotify -------------------------------------------------------------
 
+def _spotify_api_read(playlist_id: str) -> tuple[list[dict], str]:
+    """Full details (album, ISRC) via this repo's own Spotify app, as the weekly sync uses."""
+    from spotify_match import _load_env, _refresh_access_token
+
+    _load_env()
+    # No retries: a rate limit should fall back to the embed page at once, not
+    # sleep for the hours a Retry-After header can ask for.
+    sp = spotipy.Spotify(
+        auth=_refresh_access_token(), retries=0, status_retries=0, requests_timeout=15,
+    )
+    name = sp.playlist(playlist_id, fields="name").get("name", playlist_id)
+    tracks: list[dict] = []
+    page = sp.playlist_items(playlist_id, limit=100)
+    while page:
+        for entry in page.get("items", []):
+            # Spotify returns the track under "item" (was "track" in older responses).
+            t = entry.get("item") or entry.get("track")
+            if not t or t.get("type") != "track":
+                continue
+            tracks.append({
+                "name": t.get("name", ""),
+                "artist": ", ".join(a.get("name", "") for a in t.get("artists", [])),
+                "album": (t.get("album") or {}).get("name", ""),
+                "duration_ms": t.get("duration_ms", 0) or 0,
+                "isrc": (t.get("external_ids") or {}).get("isrc", ""),
+                "spotify_id": t.get("id") or "",
+                "spotify_url": (t.get("external_urls") or {}).get("spotify", ""),
+            })
+        page = sp.next(page) if page.get("next") else None
+    return tracks, name
+
+
 def read_spotify_playlist(url: str) -> tuple[list[dict], str, bool]:
-    """Returns (tracks, name, basic). Falls back to the embed page's basic track
-    list (title, artist, length; no album or ISRC) when Spotify refuses the
-    detailed read, as it does for many Spotify-made playlists since Nov 2024."""
+    """Returns (tracks, name, basic).
+
+    Reads through this repo's Spotify app first (full details). If that's not
+    possible (no credentials locally, Spotify refuses its app access to
+    Spotify-made playlists such as Your Top Songs, or rate-limits it), falls
+    back to the public embed page's basic track list: title, artist and
+    length, no album or ISRC.
+    """
+    playlist_id = _extract_playlist_id(url)
     try:
-        tracks, name = fetch_spotify_playlist(url)
+        tracks, name = _spotify_api_read(playlist_id)
         return tracks, name, False
-    except requests.HTTPError as e:
-        status = e.response.status_code if e.response is not None else None
-        if status not in (401, 403, 404):
-            raise
-        logger.warning(
-            "Spotify refused the detailed playlist read (HTTP %s); using the embed page's "
-            "basic track list (no album or ISRC, so matching relies on title and artist)", status,
-        )
+    except spotipy.SpotifyException as e:
+        reason = f"Spotify answered {e.http_status} to the app's playlist read"
+    except (RuntimeError, requests.RequestException) as e:
+        reason = f"the app's playlist read wasn't possible ({e})"
+    logger.warning(
+        "%s; using the embed page's basic track list (no album or ISRC, so matching "
+        "relies on title, artist and length)", reason,
+    )
     tracks, name = fetch_spotify_playlist(url, embed_only=True)
     return tracks, name, True
 

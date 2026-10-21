@@ -64,6 +64,10 @@ jobs:
       - name: Run import
         env:
           APPLE_MUSIC_USER_TOKEN: ${{ secrets.APPLE_MUSIC_USER_TOKEN }}
+          # Same Spotify app as the weekly sync, for full track details (album, ISRC).
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
         run: |
           args=("$SPOTIFY_URL")
           if [ "${{ inputs.dry_run }}" = "true" ]; then

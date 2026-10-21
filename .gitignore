@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+.venv/
 
 # OS files
 .DS_Store

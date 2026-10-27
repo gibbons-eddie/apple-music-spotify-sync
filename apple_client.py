@@ -44,7 +44,9 @@ def _load_env():
 class AppleClient:
     def __init__(self, user_token: str | None = None):
         _load_env()
-        self.user_token = user_token if user_token is not None else os.environ.get(USER_TOKEN_ENV, "")
+        raw = user_token if user_token is not None else os.environ.get(USER_TOKEN_ENV, "")
+        # Values copied from the browser's Local Storage view can carry quotes.
+        self.user_token = raw.strip().strip('"').strip("'").strip()
         self.sess = requests.Session()
         self.sess.headers.update({
             **HEADERS_TEMPLATE,
@@ -61,7 +63,10 @@ class AppleClient:
         if library:
             if not self.user_token:
                 raise AppleAuthError(f"{USER_TOKEN_ENV} is not set. {USER_TOKEN_HELP}")
+            # The official Apple Music API reads Music-User-Token; the web player's
+            # amp-api host, which this client uses, reads media-user-token.
             headers["Music-User-Token"] = self.user_token
+            headers["Media-User-Token"] = self.user_token
         for attempt in range(4):
             resp = self.sess.request(method, url, headers=headers, timeout=20, **kwargs)
             if resp.status_code == 429:

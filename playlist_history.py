@@ -83,7 +83,10 @@ def detect(
     playlist_name: str,
     apple_tracks: list[dict],
     spotify_current: list[str],
+    spotify_labels: dict[str, dict] | None = None,
 ) -> list[dict]:
+    """spotify_labels ({uri: {name, artist}}, from the sync's own Spotify read)
+    names tracks the history has never recorded, e.g. ones added outside it."""
     versions = history.get(playlist_name, [])
     if not versions:
         return []
@@ -100,6 +103,8 @@ def detect(
                 by_apple[t["apple_id"]] = {**label, "id": t["apple_id"]}
             if t.get("uri"):
                 by_uri[t["uri"]] = {**label, "id": t["uri"]}
+    for uri, label in (spotify_labels or {}).items():
+        by_uri.setdefault(uri, {"name": label.get("name", "?"), "artist": label.get("artist", "?"), "id": uri})
     for t in apple_tracks:
         if t.get("apple_id"):
             by_apple[t["apple_id"]] = {"name": t.get("name", "?"), "artist": t.get("artist", "?"), "id": t["apple_id"]}

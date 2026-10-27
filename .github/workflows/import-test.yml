@@ -1,6 +1,7 @@
 # TEMPORARY: read-only dry runs of the Spotify → Apple import, for testing the
-# feature branch before import.yml is on main. Spotify read secrets only; no Apple library
-# access, no issues, no commits. Delete before merging.
+# feature branch before import.yml is on main. Reads Spotify and (with the Apple user
+# token) reads the Apple library, but never writes to it; no issues, no commits.
+# Delete before merging.
 name: Import dry-run test (temporary)
 
 on:
@@ -32,9 +33,15 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Dry run (normal, seeded cache)
+      - name: Smoke test (Apple catalog + library, read-only)
+        env:
+          APPLE_MUSIC_USER_TOKEN: ${{ secrets.APPLE_MUSIC_USER_TOKEN }}
+        run: python3 smoke_test.py --import --library || echo "EXIT CODE $?"
+
+      - name: Dry run (normal, seeded cache, reads the Apple library)
         env:
           SPOTIFY_URL: ${{ matrix.url }}
+          APPLE_MUSIC_USER_TOKEN: ${{ secrets.APPLE_MUSIC_USER_TOKEN }}
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
           SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
@@ -72,6 +79,7 @@ jobs:
                     f"total={r.get('total')} resolved={r.get('resolved')} "
                     f"unmatched={len(r.get('unmatched', []))} uncertain={len(r.get('uncertain', []))} "
                     f"featured={len(r.get('featured', []))} "
+                    f"apple_playlist={r.get('apple_playlist')} "
                     f"error={r.get('error')!r}")
               for t in r.get("unmatched", []):
                   print(f"   UNMATCHED #{t['position']}: {t['name']} — {t['artist']} ({t.get('album','')})")

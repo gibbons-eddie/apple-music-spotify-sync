@@ -42,6 +42,38 @@ jobs:
           APPLE_MUSIC_USER_TOKEN: ${{ secrets.APPLE_MUSIC_USER_TOKEN }}
         run: python3 smoke_test.py --import --library || echo "EXIT CODE $?"
 
+      - name: Diagnose the Apple user token (read-only, never prints it)
+        env:
+          APPLE_MUSIC_USER_TOKEN: ${{ secrets.APPLE_MUSIC_USER_TOKEN }}
+        run: |
+          python3 - <<'EOF' || true
+          import os, re, requests
+          from apple_music import AM_BASE, HEADERS_TEMPLATE, _scrape_apple_token
+          raw = os.environ.get("APPLE_MUSIC_USER_TOKEN", "")
+          tok = raw.strip().strip('"').strip("'").strip()
+          has_space = bool(re.search(r"\s", tok))
+          base64ish = bool(re.fullmatch(r"[A-Za-z0-9+/=_-]+", tok))
+          print(f"secret length {len(raw)}, cleaned length {len(tok)}, "
+                f"whitespace inside: {has_space}, "
+                f"looks like a JWT/developer token: {tok.startswith('eyJ')}, "
+                f"only base64-ish chars: {base64ish}")
+          dev = _scrape_apple_token()
+          base = {**HEADERS_TEMPLATE, "Authorization": f"Bearer {dev}"}
+          variants = {
+              "Music-User-Token only": {"Music-User-Token": tok},
+              "media-user-token only": {"media-user-token": tok},
+              "both + Referer": {"Music-User-Token": tok, "media-user-token": tok,
+                                 "Referer": "https://music.apple.com/"},
+              "media-user-token + cookie": {"media-user-token": tok,
+                                            "Cookie": f"media-user-token={tok}"},
+          }
+          for label, extra in variants.items():
+              for path in ("/v1/me/library/playlists?limit=1", "/v1/me/storefront"):
+                  r = requests.get(AM_BASE + path, headers={**base, **extra}, timeout=20)
+                  body = r.text[:300].replace(tok, "<token>").replace(dev, "<dev>")
+                  print(f"{label:28} {path:36} -> {r.status_code} {body}")
+          EOF
+
       - name: Dry run (normal, seeded cache, reads the Apple library)
         env:
           SPOTIFY_URL: ${{ matrix.url }}

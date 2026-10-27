@@ -235,11 +235,13 @@ def resolve_tracks(
     reverse: dict,
     pending: dict,
     playlist_id: str,
-) -> tuple[list[tuple[dict, str]], list[dict], list[dict], int]:
-    """Returns ([(spotify track, apple song id)] in order, unmatched, uncertain, cache hits)."""
+) -> tuple[list[tuple[dict, str]], list[dict], list[dict], list[dict], int]:
+    """Returns ([(spotify track, apple song id)] in order, unmatched, uncertain,
+    matched-via-featured-artists, cache hits)."""
     matched: list[tuple[dict, str]] = []
     unmatched: list[dict] = []
     uncertain: list[dict] = []
+    featured: list[dict] = []
     hits = 0
 
     for idx, track in enumerate(tracks):
@@ -259,6 +261,12 @@ def resolve_tracks(
             reverse[tid] = match["id"]
             _update_pending(pending, tid, match, track, playlist_id)
             logger.info("[%s %.2f] %s — %s", match["source"], match["score"], track["name"], track["artist"])
+            if match.get("via_featured"):
+                featured.append({
+                    "spotify": _spotify_context(track, idx, len(tracks)),
+                    "picked": _apple_summary(match["song"], match["score"], match["source"]),
+                    "score_without_featured": round(match["raw_score"], 3),
+                })
             if match["score"] < MATCH_THRESHOLD:
                 uncertain.append({
                     "spotify": _spotify_context(track, idx, len(tracks)),
@@ -273,7 +281,7 @@ def resolve_tracks(
             logger.warning("UNMATCHED: %s — %s", track["name"], track["artist"])
         time.sleep(SEARCH_DELAY_SECONDS)
 
-    return matched, unmatched, uncertain, hits
+    return matched, unmatched, uncertain, featured, hits
 
 
 def prune_pending(pending: dict, dropped: dict, reverse: dict, playlist_id: str, tracks: list[dict]):
@@ -448,10 +456,12 @@ def run(url: str, dry_run: bool, save_text: bool = False) -> dict:
             report["backup"] = [str(p.relative_to(PROJECT_DIR)) for p in write_backup(tracks, sp_name, playlist_id)]
         client = AppleClient()
 
-        matched, unmatched, uncertain, hits = resolve_tracks(tracks, client, reverse, pending, playlist_id)
+        matched, unmatched, uncertain, featured, hits = resolve_tracks(
+            tracks, client, reverse, pending, playlist_id,
+        )
         logger.info("Resolved %d/%d (cache hits: %d, unmatched: %d, uncertain: %d)",
                     len(matched), len(tracks), hits, len(unmatched), len(uncertain))
-        report.update(resolved=len(matched), unmatched=unmatched, uncertain=uncertain)
+        report.update(resolved=len(matched), unmatched=unmatched, uncertain=uncertain, featured=featured)
         targets = _unique_targets(matched)
 
         if not client.has_library_access:

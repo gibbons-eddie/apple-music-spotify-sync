@@ -47,7 +47,7 @@ def _fmt_pick(c: dict) -> str:
 
 def has_review_items(report: dict) -> bool:
     return any(report.get(k) for k in (
-        "error", "unmatched", "uncertain", "pending", "remove_by_hand", "out_of_order",
+        "error", "unmatched", "uncertain", "featured", "pending", "remove_by_hand", "out_of_order",
     ))
 
 
@@ -108,7 +108,10 @@ def _render_matches(report: dict) -> list[str]:
     lines: list[str] = []
     unmatched = report.get("unmatched", [])
     if unmatched:
-        lines.append(f"## Unmatched ({len(unmatched)})")
+        lines.append(f"## Not found on Apple Music ({len(unmatched)})")
+        lines.append("_No match in the Apple Music catalog, so nothing was added for these. "
+                     "The song may be delisted or not available on Apple Music. If an Apple "
+                     "version exists, point the import at it with `/override`._")
         for t in unmatched:
             album = f" · _{t['album']}_" if t.get("album") else ""
             isrc = f" · ISRC `{t['isrc']}`" if t.get("isrc") else ""
@@ -117,6 +120,20 @@ def _render_matches(report: dict) -> list[str]:
                 lines.append(f"  - fix: {_override_hint(t['spotify_id'])}")
             else:
                 lines.append("  - local or unavailable Spotify track; can't be matched")
+        lines.append("")
+
+    featured = report.get("featured", [])
+    if featured:
+        lines.append(f"## Matched using featured artists ({len(featured)})")
+        lines.append("_Added, but only matched once the featured artists in Apple's title "
+                     "were counted (Spotify lists them as artists). Please check each pick; "
+                     "if one is wrong, use `/override`._")
+        for f in featured:
+            s, picked = f["spotify"], f["picked"]
+            lines.append(f"- **{s['name']}** — {s['artist']} (Spotify #{s['position']})")
+            lines.append(f"  - Picked: {_fmt_pick(picked)} · score without featured artists "
+                         f"`{f['score_without_featured']:.2f}`")
+            lines.append(f"  - Fix if wrong: {_override_hint(s['spotify_id'])}")
         lines.append("")
 
     uncertain = report.get("uncertain", [])

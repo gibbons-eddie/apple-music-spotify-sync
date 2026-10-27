@@ -57,6 +57,12 @@ jobs:
                 f"whitespace inside: {has_space}, "
                 f"looks like a JWT/developer token: {tok.startswith('eyJ')}, "
                 f"only base64-ish chars: {base64ish}")
+          from urllib.parse import unquote
+          odd = sorted({c for c in tok if not re.match(r"[A-Za-z0-9+/=_-]", c)})
+          print(f"characters outside base64: {odd}; contains '%' escapes: {'%' in tok}")
+          decoded = unquote(tok)
+          print(f"URL-decoded length {len(decoded)}, base64-ish after decoding: "
+                f"{bool(re.fullmatch(r'[A-Za-z0-9+/=_-]+', decoded))}")
           dev = _scrape_apple_token()
           base = {**HEADERS_TEMPLATE, "Authorization": f"Bearer {dev}"}
           variants = {
@@ -66,11 +72,12 @@ jobs:
                                  "Referer": "https://music.apple.com/"},
               "media-user-token + cookie": {"media-user-token": tok,
                                             "Cookie": f"media-user-token={tok}"},
+              "URL-decoded, both headers": {"Music-User-Token": decoded, "media-user-token": decoded},
           }
           for label, extra in variants.items():
               for path in ("/v1/me/library/playlists?limit=1", "/v1/me/storefront"):
                   r = requests.get(AM_BASE + path, headers={**base, **extra}, timeout=20)
-                  body = r.text[:300].replace(tok, "<token>").replace(dev, "<dev>")
+                  body = r.text[:300].replace(tok, "<token>").replace(decoded, "<token>").replace(dev, "<dev>")
                   print(f"{label:28} {path:36} -> {r.status_code} {body}")
           EOF
 

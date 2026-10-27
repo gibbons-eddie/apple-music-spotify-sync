@@ -71,9 +71,15 @@ jobs:
               print(f"== {kind}: {sp.get('name')!r} basic_info={sp.get('basic_info')} "
                     f"total={r.get('total')} resolved={r.get('resolved')} "
                     f"unmatched={len(r.get('unmatched', []))} uncertain={len(r.get('uncertain', []))} "
+                    f"featured={len(r.get('featured', []))} "
                     f"error={r.get('error')!r}")
               for t in r.get("unmatched", []):
                   print(f"   UNMATCHED #{t['position']}: {t['name']} — {t['artist']} ({t.get('album','')})")
+              for f in r.get("featured", []):
+                  s, pk = f["spotify"], f["picked"]
+                  print(f"   FEATURED #{s['position']}: {s['name']} — {s['artist']} -> "
+                        f"{pk['name']} — {pk['artist']} [{pk['album']}] score {pk['score']} "
+                        f"(without featured {f['score_without_featured']})")
               for u in r.get("uncertain", []):
                   s, pk = u["spotify"], u["picked"]
                   print(f"   UNCERTAIN #{s['position']}: {s['name']} — {s['artist']} -> "

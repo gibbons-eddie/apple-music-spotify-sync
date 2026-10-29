@@ -33,6 +33,7 @@ import review_state
 from apple_client import (
     AppleAuthError,
     AppleClient,
+    AppleRateLimited,
     library_track_catalog_id,
     library_track_plain,
     song_to_plain,
@@ -49,16 +50,35 @@ CACHE_DIR = PROJECT_DIR / "cache"
 FORWARD_CACHE_FILE = CACHE_DIR / "track_mapping.json"
 REVERSE_CACHE_FILE = CACHE_DIR / "reverse_mapping.json"
 IMPORTS_FILE = CACHE_DIR / "imports.json"
+# Featured-artist flags from a run that paused on a rate limit, so the resumed
+# run (which gets those songs from the cache) still lists them for review.
+CARRYOVER_FILE = CACHE_DIR / "import_carryover.json"
 REPORT_FILE = PROJECT_DIR / "reports" / "import_review.json"
 # Local text backups of each imported Spotify playlist (git-ignored).
 EXPORTS_DIR = PROJECT_DIR / "exports"
 
-SEARCH_DELAY_SECONDS = 0.15
+# Pause between Apple searches. Slower than the weekly sync's Spotify pacing:
+# Apple rate-limited bursts of ~200 searches in ~90 seconds during testing.
+SEARCH_DELAY_SECONDS = 0.5
 MARKER_PREFIX = "Imported from Spotify playlist"
 
 
 class ImportStopped(RuntimeError):
     """A run-stopping problem to show in the review issue."""
+
+
+class ImportPaused(RuntimeError):
+    """Apple rate-limited the searches; resume by re-running the import."""
+
+    def __init__(self, processed: int, total: int, matched: int, featured: list[dict]):
+        remaining = total - processed
+        super().__init__(
+            f"Apple rate-limited the song searches after {processed} of {total} songs, even "
+            "after waiting several minutes. Nothing was written to Apple Music. The "
+            f"{matched} songs matched so far are saved, so re-run this import in a few "
+            f"minutes; it will only search the remaining {remaining}."
+        )
+        self.processed, self.total, self.matched, self.featured = processed, total, matched, featured
 
 
 def marker_key(spotify_playlist_id: str) -> str:
@@ -255,7 +275,12 @@ def resolve_tracks(
             unmatched.append(_spotify_context(track, idx, len(tracks)))
             continue
 
-        match = find_apple_song(track, client)
+        try:
+            match = find_apple_song(track, client)
+        except AppleRateLimited as e:
+            # Stop before any library writes; matches so far are in `reverse`
+            # and get saved, so a re-run picks up from here.
+            raise ImportPaused(idx, len(tracks), len(matched), featured) from e
         if match:
             matched.append((track, match["id"]))
             reverse[tid] = match["id"]
@@ -417,6 +442,18 @@ def plan_update(targets: list[tuple[dict, str]], current: list[dict]) -> dict:
     }
 
 
+def _merge_featured(earlier: list[dict], new: list[dict]) -> list[dict]:
+    """Featured-artist flags from a paused run plus this run's, one per song."""
+    seen: set[str] = set()
+    out = []
+    for f in earlier + new:
+        tid = f["spotify"].get("spotify_id", "")
+        if tid not in seen:
+            seen.add(tid)
+            out.append(f)
+    return sorted(out, key=lambda f: f["spotify"].get("position", 0))
+
+
 def _unique_targets(matched: list[tuple[dict, str]]) -> list[tuple[dict, str]]:
     seen: set[str] = set()
     out = []
@@ -445,6 +482,8 @@ def run(url: str, dry_run: bool, save_text: bool = False) -> dict:
     pending = review_state.load_import_pending()
     dropped = review_state.load_import_dropped()
     imports = _load_json(IMPORTS_FILE)
+    carryover = _load_json(CARRYOVER_FILE)
+    carried = carryover.get(playlist_id, {}).get("featured", [])
 
     try:
         tracks, sp_name, basic = read_spotify_playlist(url)
@@ -456,9 +495,19 @@ def run(url: str, dry_run: bool, save_text: bool = False) -> dict:
             report["backup"] = [str(p.relative_to(PROJECT_DIR)) for p in write_backup(tracks, sp_name, playlist_id)]
         client = AppleClient()
 
-        matched, unmatched, uncertain, featured, hits = resolve_tracks(
-            tracks, client, reverse, pending, playlist_id,
-        )
+        try:
+            matched, unmatched, uncertain, featured, hits = resolve_tracks(
+                tracks, client, reverse, pending, playlist_id,
+            )
+        except ImportPaused as paused:
+            carryover[playlist_id] = {"featured": _merge_featured(carried, paused.featured)}
+            _save_json(CARRYOVER_FILE, carryover)
+            report["paused"] = {"processed": paused.processed, "total": paused.total,
+                                "matched": paused.matched}
+            raise
+        featured = _merge_featured(carried, featured)
+        if carryover.pop(playlist_id, None) is not None:
+            _save_json(CARRYOVER_FILE, carryover)
         logger.info("Resolved %d/%d (cache hits: %d, unmatched: %d, uncertain: %d)",
                     len(matched), len(tracks), hits, len(unmatched), len(uncertain))
         report.update(resolved=len(matched), unmatched=unmatched, uncertain=uncertain, featured=featured)
@@ -513,8 +562,8 @@ def run(url: str, dry_run: bool, save_text: bool = False) -> dict:
                 imports[playlist_id]["last_run_at"] = review_state.now_iso()
 
         prune_pending(pending, dropped, reverse, playlist_id, tracks)
-    except (AppleAuthError, ImportStopped) as e:
-        logger.error("Import failed: %s", e)
+    except (AppleAuthError, ImportStopped, ImportPaused, AppleRateLimited) as e:
+        logger.error("Import %s: %s", "paused" if isinstance(e, ImportPaused) else "failed", e)
         report["error"] = str(e)
     except Exception as e:
         logger.exception("Import failed")

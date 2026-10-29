@@ -29,10 +29,19 @@ USER_TOKEN_HELP = (
 )
 # Apple accepts up to 100 items per playlist-tracks request.
 BATCH_SIZE = 100
+# Rate limits (429): keep waiting and retrying for up to this long per request
+# before giving up. Apple doesn't publish this server's limits; in testing they
+# only appeared after ~200 searches in about 90 seconds.
+RATE_LIMIT_BUDGET_SECONDS = 240
+RATE_LIMIT_MAX_WAIT_SECONDS = 60
 
 
 class AppleAuthError(RuntimeError):
     """The scraped developer token or the Music User Token was rejected."""
+
+
+class AppleRateLimited(RuntimeError):
+    """Apple kept answering 429 for longer than RATE_LIMIT_BUDGET_SECONDS."""
 
 
 def _load_env():
@@ -67,12 +76,26 @@ class AppleClient:
             # amp-api host, which this client uses, reads media-user-token.
             headers["Music-User-Token"] = self.user_token
             headers["Media-User-Token"] = self.user_token
-        for attempt in range(4):
+        waited, attempt = 0.0, 0
+        while True:
             resp = self.sess.request(method, url, headers=headers, timeout=20, **kwargs)
             if resp.status_code == 429:
-                wait = min(int(resp.headers.get("Retry-After", 2 ** (attempt + 1))), 30)
-                logger.warning("Apple rate limit, waiting %ds", wait)
+                if waited >= RATE_LIMIT_BUDGET_SECONDS:
+                    raise AppleRateLimited(
+                        f"Apple rate limit persisted for {method} {path} "
+                        f"after waiting {waited:.0f}s"
+                    )
+                try:
+                    wait = float(resp.headers.get("Retry-After", ""))
+                except ValueError:
+                    wait = 5 * 2 ** attempt  # 5, 10, 20, 40, 60, 60, ...
+                wait = min(wait, RATE_LIMIT_MAX_WAIT_SECONDS, RATE_LIMIT_BUDGET_SECONDS - waited)
+                wait = max(wait, 1)
+                logger.warning("Apple rate limit on %s, waiting %.0fs (waited %.0fs so far)",
+                               path.split("?")[0], wait, waited)
                 time.sleep(wait)
+                waited += wait
+                attempt += 1
                 continue
             if resp.status_code in (401, 403):
                 if library:
@@ -86,7 +109,6 @@ class AppleClient:
                 raise AppleAuthError(f"Apple returned {resp.status_code} for {method} {path}: {cause}. {hint}")
             resp.raise_for_status()
             return resp
-        raise RuntimeError(f"Apple rate limit persisted for {method} {path}")
 
     def _paged(self, path: str, *, library: bool = False, params: dict | None = None) -> list[dict]:
         items: list[dict] = []

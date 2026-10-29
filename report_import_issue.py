@@ -77,7 +77,8 @@ def _header(report: dict) -> list[str]:
 def _render_error(report: dict) -> list[str]:
     if not report.get("error"):
         return []
-    return ["## Import failed", report["error"], ""]
+    heading = "## Import paused (Apple rate limit)" if report.get("paused") else "## Import failed"
+    return [heading, report["error"], ""]
 
 
 def _render_fix_by_hand(report: dict) -> list[str]:

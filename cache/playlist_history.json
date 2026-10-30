@@ -634,6 +634,145 @@
           "uri": "spotify:track:1aQUGQ7AcRxk96SX69gd4S"
         }
       ]
+    },
+    {
+      "first_synced_at": "2026-10-30T11:07:51+00:00",
+      "last_synced_at": "2026-10-30T11:07:51+00:00",
+      "run": "44",
+      "tracks": [
+        {
+          "apple_id": "1454593961",
+          "name": "Fame",
+          "artist": "Irene Cara",
+          "uri": "spotify:track:5CI1FP2Volc9wjz2MBZsGx"
+        },
+        {
+          "apple_id": "6781644634",
+          "name": "Powerlines",
+          "artist": "beabadoobee & Brendan Yates",
+          "uri": "spotify:track:7uvsxYvJwAGTdxMNJrgtbQ"
+        },
+        {
+          "apple_id": "1828246473",
+          "name": "California",
+          "artist": "Michael Kiwanuka",
+          "uri": "spotify:track:3meidwPTWoJ5SwszG5jm6S"
+        },
+        {
+          "apple_id": "6799814016",
+          "name": "Force of Love",
+          "artist": "Cleo Sol",
+          "uri": "spotify:track:0eTuYIcKA7pqvTCkEeOxaK"
+        },
+        {
+          "apple_id": "6800139143",
+          "name": "I Still Think About You",
+          "artist": "Weston Estate",
+          "uri": "spotify:track:7fWmDn52GIBqjL4f0qZdCM"
+        },
+        {
+          "apple_id": "6781074875",
+          "name": "Father To Son",
+          "artist": "Queen",
+          "uri": "spotify:track:6uFv3Vmjp9ajGDE7GEQQkX"
+        },
+        {
+          "apple_id": "785231830",
+          "name": "A National Acrobat",
+          "artist": "Black Sabbath",
+          "uri": "spotify:track:0QuclG0uX1lm9E7uRfVWzc"
+        },
+        {
+          "apple_id": "187447264",
+          "name": "Acabaré Llorando",
+          "artist": "Jeanette",
+          "uri": "spotify:track:5vfmG9J1OZI5pBLhDmq2lN"
+        },
+        {
+          "apple_id": "1457224042",
+          "name": "Ven Porque Te Necesito",
+          "artist": "Los Temerarios",
+          "uri": "spotify:track:4MNfkZ8dtva3cjJ2biqnDS"
+        },
+        {
+          "apple_id": "6773856156",
+          "name": "For Your Entertainment",
+          "artist": "Ellie Goulding",
+          "uri": "spotify:track:1i1Blr6MbP98bkiiDPM4um"
+        },
+        {
+          "apple_id": "1231990272",
+          "name": "Uh la La",
+          "artist": "ChocQuibTown",
+          "uri": "spotify:track:1vrDfFUoe1ddzH6BM9zQFE"
+        },
+        {
+          "apple_id": "6801692300",
+          "name": "A Good Day",
+          "artist": "Anderson .Paak & Cordae",
+          "uri": "spotify:track:7k26vLXHitJO0bRSkyFQac"
+        },
+        {
+          "apple_id": "6825987386",
+          "name": "Real Trendsettër",
+          "artist": "Yeat & Lyfestyle Corporation",
+          "uri": "spotify:track:2TtAFx0HcxsVNol1icg4yF"
+        },
+        {
+          "apple_id": "6822410223",
+          "name": "Crazy Funky",
+          "artist": "Sammy Virji",
+          "uri": "spotify:track:6pF02VNNv7y8ljMuTcMDV1"
+        },
+        {
+          "apple_id": "6815015903",
+          "name": "TTW (Kaytranada Remix)",
+          "artist": "Rochelle Jordan & KAYTRANADA",
+          "uri": "spotify:track:0g5P078vh9JBmieUdZrwF2"
+        },
+        {
+          "apple_id": "935659787",
+          "name": "Passion (Naked Mix)",
+          "artist": "Gat Decor",
+          "uri": "spotify:track:6pLqWnPefTep0LTUVG9PHG"
+        },
+        {
+          "apple_id": "1715021327",
+          "name": "Oldschool, Baby (Piano Mix)",
+          "artist": "Westbam & Nena",
+          "uri": "spotify:track:1JQwD4eYat7xbShs74ZUbJ"
+        },
+        {
+          "apple_id": "693145029",
+          "name": "I Wouldn't Normally Do This Kind of Thing (DJ Pierre Wild Pitch Mix)",
+          "artist": "Pet Shop Boys",
+          "uri": "spotify:track:0wLWXpQxNHCU8t22qvlVtP"
+        },
+        {
+          "apple_id": "252606600",
+          "name": "Nothin' Else",
+          "artist": "Justin Timberlake",
+          "uri": "spotify:track:5r757MKjSoampJi977D1QO"
+        },
+        {
+          "apple_id": "6823001747",
+          "name": "Desert Chant (from \"Dune: Part Three\")",
+          "artist": "Timothée Chalamet & Hans Zimmer",
+          "uri": "spotify:track:1aQUGQ7AcRxk96SX69gd4S"
+        },
+        {
+          "apple_id": "6824561055",
+          "name": "Dancing (Unplugged)",
+          "artist": "Jorja Smith",
+          "uri": "spotify:track:2ouVTCI0DiHqXkvsF03DWS"
+        },
+        {
+          "apple_id": "6826470419",
+          "name": "Is You Cool",
+          "artist": "Megan Thee Stallion",
+          "uri": "spotify:track:0PVTeFSCiBrh4x3d1P9zG5"
+        }
+      ]
     }
   ]
 }

@@ -22,6 +22,10 @@ from pathlib import Path
 CACHE_DIR = Path(__file__).parent / "cache"
 PENDING_FILE = CACHE_DIR / "pending_review.json"
 DROPPED_FILE = CACHE_DIR / "dropped_review.json"
+# Spotify → Apple import (spotify_to_apple.py): the same two files, keyed by
+# Spotify track ID instead of Apple ID, so the two directions never mix.
+IMPORT_PENDING_FILE = CACHE_DIR / "import_pending_review.json"
+IMPORT_DROPPED_FILE = CACHE_DIR / "import_dropped_review.json"
 
 
 def _load(path: Path) -> dict:
@@ -47,6 +51,22 @@ def load_dropped() -> dict:
 
 def save_dropped(dropped: dict):
     _save(DROPPED_FILE, dropped)
+
+
+def load_import_pending() -> dict:
+    return _load(IMPORT_PENDING_FILE)
+
+
+def save_import_pending(pending: dict):
+    _save(IMPORT_PENDING_FILE, pending)
+
+
+def load_import_dropped() -> dict:
+    return _load(IMPORT_DROPPED_FILE)
+
+
+def save_import_dropped(dropped: dict):
+    _save(IMPORT_DROPPED_FILE, dropped)
 
 
 def now_iso() -> str:

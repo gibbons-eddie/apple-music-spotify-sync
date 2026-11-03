@@ -13,31 +13,101 @@ latest one wins:
         The current pick is right: clear its pending-review entry and keep the
         cached URI. Only counts if posted after that pick was made.
 
+With --mode import (the Spotify → Apple import workflow) the same rules apply
+to open `auto-import-review` issues, with Spotify track IDs as the key:
+
+    /override spotify:track:<track_id> apple:song:<song_id>
+        Updates `cache/reverse_mapping.json`.
+
+    /accept <spotify_track_id>
+
 Commands posted before a pending track was dropped from its playlist (see
 review_state.py) are ignored. Idempotent: re-applying the same comments on
 every run is a no-op once they have taken effect.
 """
 
+import argparse
 import json
 import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import review_state
 
 PROJECT_DIR = Path(__file__).parent
-CACHE_FILE = PROJECT_DIR / "cache" / "track_mapping.json"
-ISSUE_LABEL = "auto-sync-review"
 TRUSTED_ASSOCIATION = "OWNER"
+
+
+@dataclass(frozen=True)
+class Mode:
+    """Where one workflow's review commands live and what they change."""
+    label: str
+    # Group 1/2: /override key and value; group 3: /accept key.
+    command_re: re.Pattern
+    picked_field: str
+    load_cache: Callable[[], dict]
+    save_cache: Callable[[dict], None]
+    load_pending: Callable[[], dict]
+    save_pending: Callable[[dict], None]
+    load_dropped: Callable[[], dict]
+
+
+SYNC_CACHE_FILE = PROJECT_DIR / "cache" / "track_mapping.json"
+
+
+def _load_sync_cache() -> dict:
+    return json.loads(SYNC_CACHE_FILE.read_text()) if SYNC_CACHE_FILE.exists() else {}
+
+
+def _save_sync_cache(cache: dict):
+    SYNC_CACHE_FILE.parent.mkdir(exist_ok=True)
+    SYNC_CACHE_FILE.write_text(json.dumps(cache, indent=2, sort_keys=True))
+
+
+def _import_cache_io():
+    # Imported lazily: only the import workflow needs the reverse cache.
+    import spotify_to_apple
+    return spotify_to_apple.load_reverse_cache, (
+        lambda c: spotify_to_apple._save_json(spotify_to_apple.REVERSE_CACHE_FILE, c)
+    )
+
 
 # Match anywhere in a comment body. Tolerant of surrounding markdown/prose;
 # an explicit `/override` or `/accept` prefix is the guard against accidental hits.
-COMMAND_RE = re.compile(
-    r"/override\s+`?([^\s`]+)`?\s+`?(spotify:track:[A-Za-z0-9]+)"
-    r"|/accept\s+`?([^\s`]+)"
-)
+MODES = {
+    # Weekly Apple → Spotify sync: /override <apple_id> spotify:track:<id>, /accept <apple_id>
+    "sync": Mode(
+        label="auto-sync-review",
+        command_re=re.compile(
+            r"/override\s+`?([^\s`]+)`?\s+`?(spotify:track:[A-Za-z0-9]+)"
+            r"|/accept\s+`?([^\s`]+)"
+        ),
+        picked_field="picked_uri",
+        load_cache=_load_sync_cache,
+        save_cache=_save_sync_cache,
+        load_pending=review_state.load_pending,
+        save_pending=review_state.save_pending,
+        load_dropped=review_state.load_dropped,
+    ),
+    # Spotify → Apple import: /override spotify:track:<id> apple:song:<id>, /accept <spotify track id>
+    "import": Mode(
+        label="auto-import-review",
+        command_re=re.compile(
+            r"/override\s+`?(?:spotify:track:)?([A-Za-z0-9]{22})`?\s+`?apple:song:(\d+)"
+            r"|/accept\s+`?(?:spotify:track:)?([A-Za-z0-9]{22})"
+        ),
+        picked_field="picked_id",
+        load_cache=lambda: _import_cache_io()[0](),
+        save_cache=lambda c: _import_cache_io()[1](c),
+        load_pending=review_state.load_import_pending,
+        save_pending=review_state.save_import_pending,
+        load_dropped=review_state.load_import_dropped,
+    ),
+}
 
 
 def _gh(*args: str) -> str:
@@ -52,12 +122,12 @@ def _gh(*args: str) -> str:
     return result.stdout.strip()
 
 
-def _fetch_review_comments(repo: str) -> list[dict]:
+def _fetch_review_comments(repo: str, label: str) -> list[dict]:
     """All comments on all open review issues, oldest first."""
     issues = json.loads(_gh(
         "issue", "list",
         "--repo", repo,
-        "--label", ISSUE_LABEL,
+        "--label", label,
         "--state", "open",
         "--json", "number",
         "--limit", "200",
@@ -75,83 +145,89 @@ def _fetch_review_comments(repo: str) -> list[dict]:
     return comments
 
 
-def _parse_commands(comments: list[dict]) -> list[dict]:
+def _parse_commands(comments: list[dict], mode: Mode = MODES["sync"]) -> list[dict]:
     """Commands from trusted comments, in posting order."""
     commands: list[dict] = []
     for c in comments:
         body = c.get("body", "")
-        if not COMMAND_RE.search(body):
+        if not mode.command_re.search(body):
             continue
         if c.get("authorAssociation") != TRUSTED_ASSOCIATION:
             author = (c.get("author") or {}).get("login", "?")
             print(f"  ignoring command from @{author} on #{c['issue']} (not the repo owner)")
             continue
-        for m in COMMAND_RE.finditer(body):
+        for m in mode.command_re.finditer(body):
             if m.group(1):
-                cmd = {"kind": "override", "apple_id": m.group(1), "uri": m.group(2)}
+                cmd = {"kind": "override", "key": m.group(1), "value": m.group(2)}
             else:
-                cmd = {"kind": "accept", "apple_id": m.group(3)}
+                cmd = {"kind": "accept", "key": m.group(3)}
             commands.append({**cmd, "created_at": c["createdAt"], "issue": c["issue"]})
     return commands
 
 
 def apply_commands(
     commands: list[dict], cache: dict, pending: dict, dropped: dict,
+    picked_field: str = "picked_uri",
 ) -> tuple[int, int]:
     """Mutate cache/pending in place. Returns (cache changes, pending changes)."""
     cache_changed = pending_changed = 0
     for cmd in commands:
-        apple_id = cmd["apple_id"]
+        key = cmd["key"]
         posted = review_state.parse_ts(cmd["created_at"])
         where = f"#{cmd['issue']}"
 
-        if apple_id in dropped and posted <= review_state.parse_ts(dropped[apple_id]):
-            print(f"  skip {cmd['kind']} {apple_id} ({where}): posted before the track was dropped")
+        if key in dropped and posted <= review_state.parse_ts(dropped[key]):
+            print(f"  skip {cmd['kind']} {key} ({where}): posted before the track was dropped")
             continue
 
         if cmd["kind"] == "override":
-            if cache.get(apple_id) != cmd["uri"]:
-                print(f"  override: {apple_id} → {cmd['uri']} ({where})")
-                cache[apple_id] = cmd["uri"]
+            if cache.get(key) != cmd["value"]:
+                print(f"  override: {key} → {cmd['value']} ({where})")
+                cache[key] = cmd["value"]
                 cache_changed += 1
-            if pending.pop(apple_id, None):
-                print(f"  pending cleared by override: {apple_id}")
+            if pending.pop(key, None):
+                print(f"  pending cleared by override: {key}")
                 pending_changed += 1
             continue
 
-        entry = pending.get(apple_id)
+        entry = pending.get(key)
         if not entry:
             continue
         if posted <= review_state.parse_ts(entry["picked_at"]):
-            print(f"  skip accept {apple_id} ({where}): posted before the current pick was made")
+            print(f"  skip accept {key} ({where}): posted before the current pick was made")
             continue
-        del pending[apple_id]
-        print(f"  accept: {apple_id} keeps {entry['picked_uri']} ({where})")
+        del pending[key]
+        print(f"  accept: {key} keeps {entry[picked_field]} ({where})")
         pending_changed += 1
     return cache_changed, pending_changed
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Apply /override and /accept review comments")
+    parser.add_argument("--mode", choices=sorted(MODES), default="sync",
+                        help="sync: weekly Apple → Spotify reviews; import: Spotify → Apple imports")
+    mode = MODES[parser.parse_args().mode]
+
     repo = os.environ.get("GITHUB_REPOSITORY")
     if not repo:
         print("GITHUB_REPOSITORY not set; skipping override pass.")
         return 0
 
-    commands = _parse_commands(_fetch_review_comments(repo))
+    commands = _parse_commands(_fetch_review_comments(repo, mode.label), mode)
     if not commands:
         print("No /override or /accept commands found.")
         return 0
 
-    cache = json.loads(CACHE_FILE.read_text()) if CACHE_FILE.exists() else {}
-    pending = review_state.load_pending()
-    dropped = review_state.load_dropped()
-    cache_changed, pending_changed = apply_commands(commands, cache, pending, dropped)
+    cache = mode.load_cache()
+    pending = mode.load_pending()
+    cache_changed, pending_changed = apply_commands(
+        commands, cache, pending, mode.load_dropped(), mode.picked_field,
+    )
 
     if cache_changed:
-        CACHE_FILE.parent.mkdir(exist_ok=True)
-        CACHE_FILE.write_text(json.dumps(cache, indent=2, sort_keys=True))
+        mode.save_cache(cache)
     if pending_changed:
-        review_state.save_pending(pending)
+        mode.save_pending(pending)
     print(
         f"Found {len(commands)} command(s): {cache_changed} new cache change(s), "
         f"{pending_changed} pending entr{'y' if pending_changed == 1 else 'ies'} resolved."

@@ -255,11 +255,12 @@ def _diff_sync_playlist(
     target_uris: list[str],
     target_labels: dict[str, dict],
     dry_run: bool = False,
-) -> tuple[list[str], dict]:
+) -> tuple[list[str], dict[str, dict], dict]:
     """Bring the Spotify playlist in line with target_uris.
 
-    Returns what was there before any writes, and the song-level changes. If a
-    write fails, raises PlaylistSyncError carrying the planned changes.
+    Returns what was there before any writes, its {uri: {name, artist}} labels,
+    and the song-level changes. If a write fails, raises PlaylistSyncError
+    carrying the planned changes.
     """
     current, current_labels = _get_current_playlist_uris(sp, playlist_id)
     target_counts = Counter(target_uris)
@@ -304,7 +305,7 @@ def _diff_sync_playlist(
 
     if dry_run:
         logger.info("[dry-run] no changes written")
-        return current, changes
+        return current, current_labels, changes
 
     try:
         _apply_changes(sp, playlist_id, to_remove_all, to_add, reorder_moves)
@@ -313,7 +314,7 @@ def _diff_sync_playlist(
             f"Spotify write failed partway through: {e}",
             {"planned_changes": changes},
         ) from e
-    return current, changes
+    return current, current_labels, changes
 
 
 def _apply_changes(
@@ -400,11 +401,11 @@ def sync_playlist(
         cache[t["apple_id"]]: {"name": t.get("name", ""), "artist": t.get("artist", "")}
         for t in apple_tracks if t.get("apple_id") in cache
     }
-    spotify_before, changes = _diff_sync_playlist(
+    spotify_before, spotify_labels, changes = _diff_sync_playlist(
         sp, spotify_id, uris, target_labels, dry_run=dry_run,
     )
 
-    alerts = playlist_history.detect(history, name, apple_tracks, spotify_before)
+    alerts = playlist_history.detect(history, name, apple_tracks, spotify_before, spotify_labels)
     for alert in alerts:
         logger.warning("ALERT [%s] %s", alert["kind"], alert["summary"])
         for t in alert["removed"]:

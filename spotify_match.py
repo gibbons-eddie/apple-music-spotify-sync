@@ -92,47 +92,70 @@ _SOUNDTRACK_RE = re.compile(
 ALBUM_NAME_FUZZ_THRESHOLD = 60
 
 
-def _is_original_release(spotify_track: dict, apple_track: dict) -> bool:
-    album = spotify_track.get("album", {})
-    album_name = album.get("name", "")
-    album_type = album.get("album_type", "")
-    album_artists = [a.get("name", "") for a in album.get("artists", [])]
-    apple_album = apple_track.get("album", "")
+def spotify_to_plain(spotify_track: dict) -> dict:
+    """Spotify API track → the plain shape the scorers compare.
 
-    apple_is_soundtrack = bool(_SOUNDTRACK_RE.search(apple_album))
-    spotify_is_soundtrack = bool(_SOUNDTRACK_RE.search(album_name))
-    if apple_is_soundtrack != spotify_is_soundtrack:
+    Plain shape: name, artist, album, duration_ms, isrc, album_type,
+    album_artists, release_date. apple_match.py builds the same shape from
+    Apple catalog songs, so both sync directions share one scorer.
+    """
+    album = spotify_track.get("album", {}) or {}
+    return {
+        "name": spotify_track.get("name", ""),
+        "artist": ", ".join(a.get("name", "") for a in spotify_track.get("artists", [])),
+        "album": album.get("name", ""),
+        "duration_ms": spotify_track.get("duration_ms", 0) or 0,
+        "isrc": (spotify_track.get("external_ids") or {}).get("isrc", ""),
+        "album_type": album.get("album_type", ""),
+        "album_artists": [a.get("name", "") for a in album.get("artists", [])],
+        "release_date": album.get("release_date", ""),
+    }
+
+
+def is_original_release(candidate: dict, source: dict) -> bool:
+    """Whether a plain-shape candidate looks like the source track's original
+    release (not a compilation, live cut or different soundtrack)."""
+    album_name = candidate.get("album", "")
+    source_album = source.get("album", "")
+
+    source_is_soundtrack = bool(_SOUNDTRACK_RE.search(source_album))
+    candidate_is_soundtrack = bool(_SOUNDTRACK_RE.search(album_name))
+    if source_is_soundtrack != candidate_is_soundtrack:
         return False
-    if apple_is_soundtrack and spotify_is_soundtrack:
+    if source_is_soundtrack and candidate_is_soundtrack:
         return True
 
-    if album_type == "compilation":
+    if candidate.get("album_type", "") == "compilation":
         return False
 
-    if any(a.lower() == "various artists" for a in album_artists):
+    if any(a.lower() == "various artists" for a in candidate.get("album_artists", [])):
         return False
 
     if _COMPILATION_RE.search(album_name):
         return False
 
-    spotify_is_live = bool(
-        _LIVE_RE.search(spotify_track.get("name", ""))
+    candidate_is_live = bool(
+        _LIVE_RE.search(candidate.get("name", ""))
         or _LIVE_RE.search(album_name)
     )
-    apple_is_live = bool(
-        _LIVE_RE.search(apple_track.get("name", ""))
-        or _LIVE_RE.search(apple_album)
+    source_is_live = bool(
+        _LIVE_RE.search(source.get("name", ""))
+        or _LIVE_RE.search(source_album)
     )
-    if spotify_is_live != apple_is_live:
+    if candidate_is_live != source_is_live:
         return False
 
-    if apple_album and album_name:
-        a = _normalize_text(_clean_title(apple_album))
+    if source_album and album_name:
+        a = _normalize_text(_clean_title(source_album))
         s = _normalize_text(_clean_title(album_name))
         if a and s and fuzz.token_set_ratio(a, s) < ALBUM_NAME_FUZZ_THRESHOLD:
             return False
 
     return True
+
+
+def _is_original_release(spotify_track: dict, apple_track: dict) -> bool:
+    return is_original_release(spotify_to_plain(spotify_track), apple_track)
 
 
 def _pick_best_isrc_candidate(items: list[dict], apple_track: dict) -> dict | None:
@@ -149,23 +172,22 @@ def _pick_best_isrc_candidate(items: list[dict], apple_track: dict) -> dict | No
     return items[0]
 
 
-def _score_match(apple_track: dict, spotify_track: dict) -> float:
-    a_title = _normalize_text(_clean_title(apple_track["name"]))
-    s_title = _normalize_text(_clean_title(spotify_track["name"]))
+def score_match(source: dict, candidate: dict) -> float:
+    """Similarity of two plain-shape tracks, 0–1."""
+    a_title = _normalize_text(_clean_title(source["name"]))
+    s_title = _normalize_text(_clean_title(candidate["name"]))
     title_score = fuzz.token_set_ratio(a_title, s_title) / 100.0
 
-    a_artist = _normalize_text(_clean_artist(apple_track["artist"]))
-    s_artist = _normalize_text(_clean_artist(
-        ", ".join(a["name"] for a in spotify_track.get("artists", []))
-    ))
+    a_artist = _normalize_text(_clean_artist(source["artist"]))
+    s_artist = _normalize_text(_clean_artist(candidate["artist"]))
     artist_score = fuzz.token_set_ratio(a_artist, s_artist) / 100.0
 
-    a_album = _normalize_text(_clean_title(apple_track.get("album", "")))
-    s_album = _normalize_text(_clean_title(spotify_track.get("album", {}).get("name", "")))
+    a_album = _normalize_text(_clean_title(source.get("album", "")))
+    s_album = _normalize_text(_clean_title(candidate.get("album", "")))
     album_score = fuzz.token_set_ratio(a_album, s_album) / 100.0
 
-    a_dur = apple_track.get("duration_ms", 0) or 0
-    s_dur = spotify_track.get("duration_ms", 0) or 0
+    a_dur = source.get("duration_ms", 0) or 0
+    s_dur = candidate.get("duration_ms", 0) or 0
     if a_dur and s_dur:
         delta = abs(a_dur - s_dur)
         duration_score = max(0.0, 1.0 - delta / 5000.0)
@@ -178,6 +200,10 @@ def _score_match(apple_track: dict, spotify_track: dict) -> float:
         + 0.15 * album_score
         + 0.10 * duration_score
     )
+
+
+def _score_match(apple_track: dict, spotify_track: dict) -> float:
+    return score_match(apple_track, spotify_to_plain(spotify_track))
 
 
 def find_spotify_track(

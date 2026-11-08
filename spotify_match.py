@@ -30,6 +30,41 @@ def _load_env():
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+class SpotifyTokenError(RuntimeError):
+    """Spotify refused to swap the refresh token for an access token."""
+
+
+# What each OAuth error from accounts.spotify.com usually means here, and the fix.
+_TOKEN_ERROR_HINTS = {
+    "invalid_grant": (
+        "The refresh token was revoked or has expired (for example the app was removed "
+        "under Spotify Account → Apps, or after a password change). Run "
+        "get_refresh_token.py and update the SPOTIFY_REFRESH_TOKEN secret."
+    ),
+    "invalid_client": (
+        "The client ID or secret was rejected (for example the secret was reset in the "
+        "Spotify Developer Dashboard, or the app was deleted). Check the app in the "
+        "dashboard and update the SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET secrets."
+    ),
+}
+
+
+def _token_error(resp: requests.Response) -> SpotifyTokenError:
+    try:
+        body = resp.json()
+    except ValueError:
+        body = {}
+    code = body.get("error", "") if isinstance(body, dict) else ""
+    detail = body.get("error_description", "") if isinstance(body, dict) else ""
+    reason = ": ".join(part for part in (code, detail) if part) or (resp.text or "")[:200]
+    hint = _TOKEN_ERROR_HINTS.get(code, "Check the app in the Spotify Developer Dashboard "
+                                        "and the SPOTIFY_* secrets.")
+    return SpotifyTokenError(
+        f"Spotify refused the token refresh (HTTP {resp.status_code}"
+        f"{', ' + reason if reason else ''}). {hint}"
+    )
+
+
 def _refresh_access_token() -> str:
     client_id = os.environ.get("SPOTIFY_CLIENT_ID")
     client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET")
@@ -46,7 +81,8 @@ def _refresh_access_token() -> str:
         headers={"Authorization": f"Basic {auth_header}"},
         timeout=15,
     )
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        raise _token_error(resp)
     return resp.json()["access_token"]
 
 

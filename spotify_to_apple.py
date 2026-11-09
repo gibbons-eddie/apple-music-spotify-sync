@@ -2,8 +2,9 @@
 
     python3 spotify_to_apple.py <spotify playlist link> [--dry-run]
 
-First run for a link creates an Apple Music library playlist with the same name
-and an "Imported from Spotify playlist <id>" marker in its description. Later
+First run for a link creates an Apple Music library playlist named
+"From Spotify: <Spotify name>", with an "Imported from Spotify playlist <id>"
+marker in its description. Later
 runs find it again (cache/imports.json, then the marker) and append the songs
 it's missing. Apple's public API can't remove or reorder songs, so songs to
 remove and songs out of order are listed in the review issue to fix by hand.
@@ -61,6 +62,8 @@ EXPORTS_DIR = PROJECT_DIR / "exports"
 # Apple rate-limited bursts of ~200 searches in ~90 seconds during testing.
 SEARCH_DELAY_SECONDS = 0.5
 MARKER_PREFIX = "Imported from Spotify playlist"
+# Prepended to the Apple playlist's name so imports stand out in the library.
+APPLE_NAME_PREFIX = "From Spotify: "
 
 
 class ImportStopped(RuntimeError):
@@ -79,6 +82,11 @@ class ImportPaused(RuntimeError):
             f"minutes; it will only search the remaining {remaining}."
         )
         self.processed, self.total, self.matched, self.featured = processed, total, matched, featured
+
+
+def apple_name(spotify_name: str) -> str:
+    """The Apple Music name for an imported playlist."""
+    return spotify_name if spotify_name.startswith(APPLE_NAME_PREFIX) else APPLE_NAME_PREFIX + spotify_name
 
 
 def marker_key(spotify_playlist_id: str) -> str:
@@ -489,6 +497,7 @@ def run(url: str, dry_run: bool, save_text: bool = False) -> dict:
         tracks, sp_name, basic = read_spotify_playlist(url)
         logger.info("Spotify: %d tracks (%s)", len(tracks), sp_name)
         report["spotify_playlist"]["name"] = sp_name
+        am_name = apple_name(sp_name)
         report["spotify_playlist"]["basic_info"] = basic
         report["total"] = len(tracks)
         if save_text:
@@ -520,31 +529,31 @@ def run(url: str, dry_run: bool, save_text: bool = False) -> dict:
                     "Run with --dry-run to only match, or add the token."
                 )
             logger.warning("No APPLE_MUSIC_USER_TOKEN: dry run without checking the Apple library")
-            report["apple_playlist"] = {"action": "not_checked", "name": sp_name}
+            report["apple_playlist"] = {"action": "not_checked", "name": am_name}
             report["added"] = _named(targets)
         else:
-            existing = find_existing_playlist(client, imports, playlist_id, sp_name)
+            existing = find_existing_playlist(client, imports, playlist_id, am_name)
             if existing is None:
-                report["apple_playlist"] = {"action": "would_create" if dry_run else "created", "name": sp_name}
+                report["apple_playlist"] = {"action": "would_create" if dry_run else "created", "name": am_name}
                 report["added"] = _named(targets)
                 if not dry_run:
                     apple_id = client.create_library_playlist(
-                        sp_name, marker(playlist_id), [s for _, s in targets],
+                        am_name, marker(playlist_id), [s for _, s in targets],
                     )
                     report["apple_playlist"]["id"] = apple_id
                     imports[playlist_id] = {
-                        "apple_playlist_id": apple_id, "name": sp_name,
+                        "apple_playlist_id": apple_id, "name": am_name,
                         "created_at": review_state.now_iso(),
                     }
                 logger.info("%s Apple playlist '%s' with %d songs",
-                            "Would create" if dry_run else "Created", sp_name, len(targets))
+                            "Would create" if dry_run else "Created", am_name, len(targets))
             else:
                 apple_id = existing["id"]
                 current = client.library_playlist_tracks(apple_id)
                 plan = plan_update(targets, current)
                 report["apple_playlist"] = {
                     "action": "would_update" if dry_run else "updated", "id": apple_id,
-                    "name": existing.get("attributes", {}).get("name", sp_name),
+                    "name": existing.get("attributes", {}).get("name", am_name),
                 }
                 report["added"] = _named(plan["to_add"])
                 report["remove_by_hand"] = plan["remove_by_hand"]
@@ -557,7 +566,7 @@ def run(url: str, dry_run: bool, save_text: bool = False) -> dict:
                     len(plan["remove_by_hand"]), len(plan["out_of_order"]),
                 )
                 if not dry_run:
-                    imports.setdefault(playlist_id, {}).update(apple_playlist_id=apple_id, name=sp_name)
+                    imports.setdefault(playlist_id, {}).update(apple_playlist_id=apple_id, name=am_name)
             if not dry_run:
                 imports[playlist_id]["last_run_at"] = review_state.now_iso()
 

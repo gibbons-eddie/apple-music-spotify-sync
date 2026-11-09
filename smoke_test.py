@@ -20,7 +20,7 @@ import requests
 import spotipy
 
 from apple_music import AM_BASE, HEADERS_TEMPLATE, _scrape_apple_token
-from spotify_match import build_client
+from spotify_match import SpotifyTokenError, build_client
 
 PLAYLISTS_FILE = Path(__file__).parent / "playlists.json"
 PLAYLIST_NAME = "Eddie Gibbons Essentials"
@@ -61,6 +61,8 @@ def probe_apple_library() -> str:
 
 
 def _explain(exc: Exception) -> str:
+    if isinstance(exc, SpotifyTokenError):
+        return str(exc)
     if isinstance(exc, spotipy.SpotifyException) and exc.http_status in (401, 403):
         return (
             f"HTTP {exc.http_status}: {exc.msg}\n"

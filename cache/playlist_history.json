@@ -1408,6 +1408,133 @@
           "uri": "spotify:track:2lFFiNm0XtgJ6wkdncTB4k"
         }
       ]
+    },
+    {
+      "first_synced_at": "2026-11-27T14:35:03+00:00",
+      "last_synced_at": "2026-11-27T14:35:03+00:00",
+      "run": "50",
+      "tracks": [
+        {
+          "apple_id": "1454593961",
+          "name": "Fame",
+          "artist": "Irene Cara",
+          "uri": "spotify:track:5CI1FP2Volc9wjz2MBZsGx"
+        },
+        {
+          "apple_id": "952836",
+          "name": "To Have and Not to Hold",
+          "artist": "Madonna",
+          "uri": "spotify:track:0koXhZM2nyHAJ6fmGWCprN"
+        },
+        {
+          "apple_id": "6812477320",
+          "name": "Largate",
+          "artist": "Kali Uchis & Helado Negro",
+          "uri": "spotify:track:3g9MD1bGGHDCCB1CbWBhTM"
+        },
+        {
+          "apple_id": "6831309492",
+          "name": "No Punctuation",
+          "artist": "beabadoobee",
+          "uri": "spotify:track:6eZdZWIjhIGU7OR0FhmvqJ"
+        },
+        {
+          "apple_id": "1828246473",
+          "name": "California",
+          "artist": "Michael Kiwanuka",
+          "uri": "spotify:track:3meidwPTWoJ5SwszG5jm6S"
+        },
+        {
+          "apple_id": "6773775295",
+          "name": "the feeling",
+          "artist": "Steve Lacy",
+          "uri": "spotify:track:1OWBh1eVxUdA1Z6UA8r4nh"
+        },
+        {
+          "apple_id": "6804860661",
+          "name": "Crave You (feat. Giselle)",
+          "artist": "Flight Facilities",
+          "uri": "spotify:track:4ZOigDj8pelQY3SjLByLFk"
+        },
+        {
+          "apple_id": "6824561055",
+          "name": "Dancing (Unplugged)",
+          "artist": "Jorja Smith",
+          "uri": "spotify:track:2ouVTCI0DiHqXkvsF03DWS"
+        },
+        {
+          "apple_id": "1834990081",
+          "name": "Sensación Del Bloque",
+          "artist": "De La Ghetto & Randy",
+          "uri": "spotify:track:1GRE3c47PJD77BfqC5MNFa"
+        },
+        {
+          "apple_id": "1443529354",
+          "name": "Chase",
+          "artist": "Giorgio Moroder",
+          "uri": "spotify:track:3CgonfeyRh23O9F4aKiIbW"
+        },
+        {
+          "apple_id": "1655225568",
+          "name": "Dirty New Yorker (feat. Havoc & Prodigy) [From H.N.I.C. Part 2 Sessions]",
+          "artist": "Mobb Deep",
+          "uri": "spotify:track:3SuRcttMiKj4kqDqNf8DnJ"
+        },
+        {
+          "apple_id": "6824993081",
+          "name": "Metele Sazón",
+          "artist": "DJ Nelson & Derek Romero",
+          "uri": "spotify:track:7wsMw7t1BaTCdidbaNgFfh"
+        },
+        {
+          "apple_id": "1443276851",
+          "name": "January (feat. Jamie Woon) [Kaytranada Edition]",
+          "artist": "Disclosure",
+          "uri": "spotify:track:2W0PgbJmayLcgbSyqGDqjq"
+        },
+        {
+          "apple_id": "6822410223",
+          "name": "Crazy Funky",
+          "artist": "Sammy Virji",
+          "uri": "spotify:track:6pF02VNNv7y8ljMuTcMDV1"
+        },
+        {
+          "apple_id": "6786498332",
+          "name": "Impressions",
+          "artist": "The Martinez Brothers & Stevie Appleton",
+          "uri": "spotify:track:0FxEt9WPc729I8X2hvk4vp"
+        },
+        {
+          "apple_id": "1804394867",
+          "name": "Malvada",
+          "artist": "Bb trickz",
+          "uri": "spotify:track:5OrDDAGeGbUl6DBvdKMNYH"
+        },
+        {
+          "apple_id": "1458398730",
+          "name": "Canalla",
+          "artist": "Romeo Santos & El Chaval de la Bachata",
+          "uri": "spotify:track:4XEXrp37kZXpQTB2r5vWbS"
+        },
+        {
+          "apple_id": "6825987508",
+          "name": "Diseasë",
+          "artist": "Yeat & Lyfestyle Corporation",
+          "uri": "spotify:track:1awtLtmFAcsAO1P7OTeOSj"
+        },
+        {
+          "apple_id": "1088528666",
+          "name": "Drive",
+          "artist": "The Cars",
+          "uri": "spotify:track:2lFFiNm0XtgJ6wkdncTB4k"
+        },
+        {
+          "apple_id": "1440863122",
+          "name": "Goodbye Yellow Brick Road (2014 Remaster)",
+          "artist": "Elton John",
+          "uri": "spotify:track:1Tqp0NfsdBkXtcy45z6kYu"
+        }
+      ]
     }
   ]
 }
